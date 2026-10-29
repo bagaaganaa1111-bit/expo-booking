@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Лангуу захиалах</title>
+<meta name="description" content="Үзэсгэлэнгийн талбайн зургаас сул лангуугаа сонгож онлайнаар захиалаарай.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow" id="dates">Лангуу захиалга</p>
+    <h1 id="title">Үзэсгэлэнгийн лангуу захиалах</h1>
+    <p class="lead" id="lead">Талбайн зургаас ногоон хүрээтэй сул лангуугаа сонгоод 1 минутад захиална.</p>
+  </header>
+
+  <div class="loading" id="loading"><span class="spin"></span><span>Талбайн зургийг ачааллаж байна…</span></div>
+  <div class="card" id="fatal" hidden><h2>Хуудсыг нээж чадсангүй</h2><p class="hint" id="fatalMsg"></p><div><button class="btn" id="retry">Дахин оролдох</button></div></div>
+
+  <section class="card" id="pick" hidden aria-labelledby="pickH">
+    <div class="row spread"><h2 id="pickH">Лангуугаа сонгоно уу</h2><span class="hint"><b id="freeN" style="color:var(--fg)"></b> сул лангуу</span></div>
+    <div class="chips" id="cats" role="group" aria-label="Салбараар шүүх"></div>
+    <div class="frame" id="frame"><div class="plan pub" id="plan"><img id="img" alt="Үзэсгэлэнгийн талбайн зураг"><div class="layer" id="layer"></div></div></div>
+    <div class="row spread">
+      <div class="legend"><span><i style="border-color:var(--free);background:color-mix(in srgb,var(--free) 22%,transparent)"></i>Сул — дарж захиална</span><span><i style="border-color:var(--held);background:color-mix(in srgb,var(--held) 40%,transparent)"></i>Түр барьсан</span><span><i style="border-color:var(--paid);background:color-mix(in srgb,var(--paid) 40%,transparent)"></i>Захиалагдсан</span></div>
+      <label class="f" style="flex-direction:row;align-items:center;gap:8px">Томруулах <input id="zoom" type="range" min="100" max="320" step="10" value="100"></label>
+    </div>
+  </section>
+
+  <section class="panel" id="info" hidden aria-live="polite"></section>
+
+  <section class="card" id="how" hidden>
+    <h2>Хэрхэн захиалах вэ</h2>
+    <ol class="steps">
+      <li><b>Лангуугаа сонгоно</b>Ногоон хүрээтэй лангуу дээр дарахад хэмжээ, салбар, үнэ харагдана.</li>
+      <li><b>Мэдээллээ оруулна</b>Байгууллагын нэр, утсаа оруулаад "Захиалах" дарна.</li>
+      <li><b id="hHold">48 цаг барьцаалагдана</b>Лангуу танд түр барьцаалагдаж, менежер тантай холбогдоно.</li>
+      <li><b id="hAdv">Урьдчилгаа төлнө</b>Урьдчилгаа төлөхөд захиалга баталгаажна.</li>
+    </ol>
+  </section>
+</div>
+<div id="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+const EID = new URLSearchParams(location.search).get("e") || "";
+let D = null, sel = null, done = {}, filter = null, zoom = 100, busy = false;
+const MINE = "expo-mine-" + EID;
+try { done = JSON.parse(store(MINE) || "{}") || {}; } catch (e) { done = {}; }
+const catOf = b => D.cats.find(c => c.id === b.cat) || D.cats[0] || { name: "", color: "#ccc", price: 0 };
+const byId = id => D.booths.find(b => b.id === id);
+
+async function load(first) {
+  if (!EID) { fatal("Холбоос дутуу байна. Зохион байгуулагчаас ирсэн холбоосыг бүтнээр нь нээнэ үү."); return; }
+  try {
+    const r = await api("expo", { e: EID });
+    const prev = D; D = r;
+    if (first) {
+      document.title = r.expo.name + " — лангуу захиалах";
+      $("#title").textContent = r.expo.name;
+      $("#dates").textContent = [r.expo.start, r.expo.end].filter(Boolean).join(" – ") || "Лангуу захиалга";
+      $("#hHold").textContent = r.expo.holdHours + " цаг барьцаалагдана";
+      $("#hAdv").textContent = r.expo.advancePct + "% урьдчилгаа төлнө";
+      const src = await loadImage(r.expo.imageId);
+      $("#img").src = src;
+      $("#loading").hidden = true; $("#pick").hidden = false; $("#how").hidden = false;
+      const fit = fitBooths(r.booths, $("#frame"), window.innerWidth < 700);
+      zoom = fit.zoom; $("#zoom").value = zoom;
+      chips(); renderPlan(); requestAnimationFrame(fit.scroll);
+    }
+    renderPlan();
+    const s = sel && byId(sel);
+    if (s && prev && !done[s.id]) { const was = prev.booths.find(b => b.id === s.id); if (was && was.status !== s.status) info(); }
+  } catch (e) { if (first) fatal(e.message); }
+}
+function fatal(m) { $("#loading").hidden = true; $("#fatal").hidden = false; $("#fatalMsg").textContent = m; }
+$("#retry").onclick = () => { $("#fatal").hidden = true; $("#loading").hidden = false; load(true); };
+
+function renderPlan() {
+  $("#plan").style.width = Math.round(Math.max($("#frame").clientWidth - 2, 1) * zoom / 100) + "px";
+  $("#layer").innerHTML = D.booths.map(b => '<button class="bt st-' + b.status + (b.id === sel ? " sel" : "") + (filter && b.cat !== filter ? " dim" : "") + '" data-id="' + esc(b.id) + '" style="left:' + b.x + "%;top:" + b.y + "%;width:" + b.w + "%;height:" + b.h + '%" aria-label="' + esc(b.code) + ", " + b.m2 + " м², " + { free: "сул", held: "түр барьсан", sold: "захиалагдсан" }[b.status] + '"></button>').join("");
+  $("#freeN").textContent = D.booths.filter(b => b.status === "free" && (!filter || b.cat === filter)).length;
+}
+function chips() {
+  if (D.cats.length < 2) { $("#cats").hidden = true; return; }
+  $("#cats").innerHTML = '<button data-c="" aria-pressed="' + !filter + '">Бүх салбар</button>' + D.cats.map(c => '<button data-c="' + esc(c.id) + '" aria-pressed="' + (filter === c.id) + '"><span class="sw" style="background:' + esc(c.color) + '"></span>' + esc(c.name) + (c.price ? " · " + fmt(c.price) + " ₮/м²" : "") + "</button>").join("");
+}
+$("#cats").onclick = e => { const b = e.target.closest("button"); if (!b) return; filter = b.dataset.c || null; chips(); renderPlan(); };
+$("#zoom").oninput = e => { zoom = +e.target.value; renderPlan(); };
+window.addEventListener("resize", () => { if (D) renderPlan(); });
+$("#layer").addEventListener("click", e => { const bt = e.target.closest(".bt"); if (!bt) return; sel = bt.dataset.id; renderPlan(); info(); setTimeout(() => $("#info").scrollIntoView({ block: "nearest", behavior: "smooth" }), 60); });
+
+function info() {
+  const el = $("#info"), b = byId(sel); if (!b) { el.hidden = true; return; }
+  const c = catOf(b), adv = Math.round(b.price * D.expo.advancePct / 100), mine = done[b.id];
+  let h = '<div class="row spread"><div class="row" style="gap:8px"><span class="code">' + esc(b.code) + "</span>" + pillHtml(mine ? "held" : b.status, true) + '</div><strong style="font-size:20px;font-variant-numeric:tabular-nums">' + fmt(mine ? mine.price : b.price) + " ₮</strong></div>" +
+    '<p class="hint" style="margin-top:-6px">' + b.m2 + ' м²' + (c.name ? ' · <span class="sw" style="background:' + esc(c.color) + '"></span> ' + esc(c.name) : "") + "</p>";
+  if (mine) {
+    h += '<div class="ok"><strong>Захиалга бүртгэгдлээ, баярлалаа!</strong><p class="hint" style="margin-top:4px">' + esc(b.code) + " лангуу " + mine.holdHours + " цагийн турш танд барьцаалагдлаа. Энэ хугацаанд урьдчилгаагаа төлнө үү. Менежер удахгүй тантай холбогдоно.</p></div>" +
+      '<div class="kv"><span>Байгууллага</span><b>' + esc(mine.org) + "</b><span>Нийт дүн</span><b>" + fmt(mine.price) + " ₮</b><span>Урьдчилгаа</span><b>" + fmt(mine.advance) + " ₮</b><span>Гүйлгээний утга</span><b>" + esc(b.code + " " + mine.org) + "</b>" + (D.expo.payInfo ? "<span>Данс</span><b>" + esc(D.expo.payInfo) + "</b>" : "") + "</div>";
+  } else if (b.status === "free") {
+    h += '<form id="bf" class="grid" novalidate>' +
+      '<label class="f">Байгууллагын нэр *<input id="fOrg" type="text" autocomplete="organization" placeholder="Өглөө Трейд ХХК"><span class="err" id="eOrg"></span></label>' +
+      '<label class="f">Хариуцах хүн<input id="fPer" type="text" autocomplete="name" placeholder="Б. Сараа"></label>' +
+      '<label class="f">Утас *<input id="fTel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="99112233"><span class="err" id="eTel"></span></label>' +
+      '<label class="f">Имэйл<input id="fMail" type="email" autocomplete="email" placeholder="info@company.mn"><span class="err" id="eMail"></span></label>' +
+      '<div class="row" style="grid-column:1/-1"><button class="btn pri" type="submit" id="fBtn">Захиалах</button><span class="hint">Урьдчилгаа ' + fmt(adv) + " ₮ · " + D.expo.holdHours + " цагийн дотор</span></div><span class=\"err\" id=\"eAll\" style=\"grid-column:1/-1\"></span></form>";
+  } else h += '<p class="hint">Энэ лангуу ' + (b.status === "held" ? "түр барьцаалагдсан" : "захиалагдсан") + " байна. Ногоон хүрээтэй сул лангуунаас сонгоно уу.</p>";
+  el.innerHTML = h; el.hidden = false;
+  const f = $("#bf"); if (!f) return;
+  ["fOrg", "fTel", "fMail"].forEach(k => { $("#" + k).oninput = () => { $("#e" + k.slice(1)).textContent = ""; $("#eAll").textContent = ""; }; });
+  f.onsubmit = async e => {
+    e.preventDefault(); if (busy) return;
+    const org = $("#fOrg").value.trim(), tel = $("#fTel").value.replace(/[\s-]/g, ""), mail = $("#fMail").value.trim();
+    const okTel = /^\d{8}$/.test(tel), okMail = !mail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail);
+    $("#eOrg").textContent = org ? "" : "Байгууллагын нэрээ оруулна уу"; $("#eTel").textContent = okTel ? "" : "8 оронтой утасны дугаар оруулна уу"; $("#eMail").textContent = okMail ? "" : "Имэйл хаяг буруу байна";
+    if (!org || !okTel || !okMail) return;
+    busy = true; $("#fBtn").disabled = true; $("#fBtn").textContent = "Илгээж байна…";
+    try {
+      const r = await api("book", { e: EID, boothId: b.id, org, person: $("#fPer").value.trim(), tel, mail });
+      done[b.id] = r.booking; store(MINE, JSON.stringify(done)); b.status = "held";
+      renderPlan(); info();
+    } catch (err) {
+      $("#eAll").textContent = err.message; $("#fBtn").disabled = false; $("#fBtn").textContent = "Захиалах";
+      if (err.server) load(false);
+    } finally { busy = false; }
+  };
+}
+
+load(true);
+setInterval(() => { if (!document.hidden && D && !busy) load(false); }, 60000);
+</script>
+</body>
+</html>

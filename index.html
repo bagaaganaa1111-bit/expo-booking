@@ -131,7 +131,8 @@ function info() {
 }
 
 load(true);
-setInterval(() => { if (!document.hidden && D && !busy) load(false); }, 60000);
+setInterval(() => { if (!document.hidden && D && !busy) load(false); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && D && !busy) load(false); });
 </script>
 </body>
 </html>

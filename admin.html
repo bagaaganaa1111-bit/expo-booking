@@ -355,10 +355,10 @@ async function setStatus(b, status, extra) {
   if (dirty) { if (!(await save())) return; b = BOOTHS.find(x => x.code === b.code) || b; }
   document.querySelectorAll("#info button").forEach(x => x.disabled = true);
   try {
-    await call("setStatus", Object.assign({ id: EXPO.id, boothId: b.id, status }, extra || {}));
+    await call("setStatus", Object.assign({ id: EXPO.id, boothId: b.id, status, expect: b.status || "free" }, extra || {}));
     toast(b.code + ": " + { free: "захиалга цуцлагдлаа", held: "түр барьцаалагдлаа", adv: "урьдчилгаа бүртгэгдлээ", paid: "бүрэн төлөгдлөө" }[status] + ".");
     await openExpo(EXPO.id, true);
-  } catch (e) { toast(e.message, 6000); info(); }
+  } catch (e) { toast(e.message, 7000); if (e.server) await openExpo(EXPO.id, true); else info(); }
 }
 
 /* ---------- Хадгалах ---------- */
@@ -408,10 +408,11 @@ async function route() {
   if (!PIN) { show("vLogin"); return; }
   if (!USER) { try { USER = (await api("login", { pin: PIN })).user; } catch (e) { logout(); return; } }
   const m = /e=([\w-]+)/.exec(location.hash);
-  if (m) { await openExpo(m[1]); pollT = setInterval(() => { if (!document.hidden && !dirty && !drag && EXPO) openExpo(EXPO.id, true); }, 60000); }
+  if (m) { await openExpo(m[1]); pollT = setInterval(() => { if (!document.hidden && !dirty && !drag && EXPO) openExpo(EXPO.id, true); }, 30000); }
   else openList();
 }
 window.addEventListener("hashchange", route);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && EXPO && !dirty && !drag && !$("#vExpo").hidden) openExpo(EXPO.id, true); });
 route();
 </script>
 </body>

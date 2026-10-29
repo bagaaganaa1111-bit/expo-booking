@@ -440,6 +440,7 @@ function apiSetStatus_(req, who) {
     const b = boothsOf_(e.id).find(x => String(x.boothId) === String(req.boothId));
     if (!b) fail_('Лангуу олдсонгүй.');
     const prev = b.status || 'free';
+    if (req.expect && String(req.expect) !== prev) fail_(b.code + ' лангууны төлөвийг сая өөр хүн өөрчилсөн байна (одоо: ' + ({ free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' }[prev]) + '). Мэдээлэл шинэчлэгдлээ, дахин шалгана уу.');
     if (st === 'free') {
       if (prev === 'free') return { e, b, prev, same: true };
       const org = b.org; clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = who.name; writeRow_(SH.BOOTH, b);

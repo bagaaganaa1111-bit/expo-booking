@@ -227,7 +227,8 @@ function apiBook_(req) {
 function auth_(pin) {
   pin = str_(pin, 20);
   if (!pin) fail_('PIN кодоо оруулна уу.');
-  const s = readAll_(SH.STAFF).find(x => String(x.pin) === pin && String(x.active).toLowerCase() !== 'false' && String(x.active) !== 'үгүй');
+  const same = x => String(x.pin).trim() === pin || (/^\d+$/.test(pin) && /^\d+$/.test(String(x.pin).trim()) && Number(x.pin) === Number(pin));
+  const s = readAll_(SH.STAFF).find(x => same(x) && String(x.active).toLowerCase() !== 'false' && String(x.active) !== 'үгүй');
   if (!s) { Utilities.sleep(800); fail_('PIN код буруу байна.'); }
   return { name: String(s.name), role: String(s.role || 'staff') };
 }
@@ -527,7 +528,7 @@ function setup() {
   folder_();
   if (!readAll_(SH.STAFF).length) {
     const pin = prop_('ADMIN_PIN') || String(Math.floor(100000 + Math.random() * 900000));
-    appendRows_(SH.STAFF, [{ name: 'Захирал', pin, role: 'admin', active: 'тийм' }]);
+    appendRows_(SH.STAFF, [{ name: 'Захирал', pin: "'" + pin, role: 'admin', active: 'тийм' }]);
     console.log('Захирлын PIN: ' + pin + ' — "Ажилтан" хуудаснаас харж, өөрчилж болно.');
   }
   ScriptApp.getProjectTriggers().forEach(t => {

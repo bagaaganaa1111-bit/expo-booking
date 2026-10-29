@@ -1,2 +1,1 @@
-// Apps Script-ийг "Web app" болгон нийтлэхэд гарах холбоосыг энд тавина.
-window.EXPO_API = "PASTE_WEB_APP_URL_HERE";
+window.EXPO_API = "https://script.google.com/macros/s/AKfycbyIG0JUpqjVomlhgLR0aTFaDAyPsaseZGvfSR2GGjVZZtlDsAazwHS74kNfuEQPjfuE/exec";

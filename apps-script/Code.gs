@@ -39,6 +39,11 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return out_({ ok: false, error: 'Хүсэлт буруу байна.' }); }
+  if (body && body.update_id !== undefined) {
+    // Telegram-ын товч, команд
+    try { tgUpdate_(body, (e && e.parameter) || {}); } catch (err) { reportError_('telegram', err); }
+    return out_({ ok: true });
+  }
   return handle_(body);
 }
 
@@ -279,7 +284,7 @@ function apiBook_(req) {
   });
   const adv = Math.round(res.price * res.e.advancePct / 100);
   notify_('ops', '🟨 Шинэ захиалга — ' + res.e.name + '\nЛангуу: ' + res.b.code + ' (' + res.b.m2 + ' м²)\n' + org + (person ? ', ' + person : '') + '\n📞 ' + tel + (mail ? '\n✉️ ' + mail : '') +
-    '\nДүн: ' + fmt_(res.price) + '₮, урьдчилгаа ' + fmt_(adv) + '₮\n' + res.e.holdHours + ' цагийн дотор урьдчилгаа орохгүй бол автоматаар суллагдана.');
+    '\nДүн: ' + fmt_(res.price) + '₮, урьдчилгаа ' + fmt_(adv) + '₮\n' + res.e.holdHours + ' цагийн дотор урьдчилгаа орохгүй бол автоматаар суллагдана.', { buttons: tgButtons_(res.e, res.b) });
   return { booking: { code: String(res.b.code), price: res.price, advance: adv, holdHours: res.e.holdHours, org, payInfo: String(res.e.payInfo || '') } };
 }
 
@@ -532,6 +537,13 @@ function apiSaveBooths_(req, who) {
 }
 
 function apiSetStatus_(req, who) {
+  const r = changeStatus_(req, who);
+  statusNotify_(r, who);
+  return { status: r.st };
+}
+
+/** Лангууны төлөвийг өөрчилнө (ажилтны хуудас болон Telegram товч хоёулаа үүнийг ашиглана). */
+function changeStatus_(req, who) {
   const st = String(req.status || '');
   if (!{ free: 1, held: 1, adv: 1, paid: 1 }[st]) fail_('Төлөв буруу.');
   const r = withLock_(() => {
@@ -558,11 +570,15 @@ function apiSetStatus_(req, who) {
     return { e, b, prev };
   });
   bump_(r.e);
-  if (!r.same) {
-    const t = { free: '⬜ Цуцлагдсан', held: '🟨 Утсаар захиалга', adv: '🟧 Урьдчилгаа орсон', paid: '🟥 Бүрэн төлсөн' }[st];
-    notify_('ops', t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')');
-  }
-  return { status: st };
+  r.st = st;
+  return r;
+}
+
+function statusNotify_(r, who, skipChat) {
+  if (r.same) return;
+  const t = { free: '⬜ Цуцлагдсан', held: '🟨 Утсаар захиалга', adv: '🟧 Урьдчилгаа орсон', paid: '🟥 Бүрэн төлсөн' }[r.st];
+  notify_('ops', t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + (r.b.tel ? '\n📞 ' + r.b.tel : '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')',
+    { buttons: tgButtons_(r.e, r.b), skip: skipChat });
 }
 
 /* ===================== Ажилтан удирдах ===================== */
@@ -602,18 +618,13 @@ function apiStaffSave_(req, who) {
  *   report — захирал (санхүүгийн тайлан); захирлын чат тохируулаагүй бол систем админ
  *   tech   — систем админ (алдаа); тохируулаагүй бол захирал
  */
-function notify_(kind, text) {
-  const token = prop_('TELEGRAM_TOKEN');
-  if (!token) return;
+function notify_(kind, text, opt) {
+  if (!prop_('TELEGRAM_TOKEN')) return;
+  opt = opt || {};
   const g = prop_('TELEGRAM_CHAT'), d = prop_('TELEGRAM_DIRECTOR'), a = prop_('TELEGRAM_ADMIN');
   const to = kind === 'ops' ? [g, d] : kind === 'report' ? [d || a] : kind === 'tech' ? [a || d] : [g, d, a];
-  to.filter((c, i) => c && to.indexOf(c) === i).forEach(chat => {
-    try {
-      UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-        payload: JSON.stringify({ chat_id: chat, text: text, disable_web_page_preview: true })
-      });
-    } catch (e) {}
+  to.filter((c, i) => c && to.indexOf(c) === i && String(c) !== String(opt.skip || '')).forEach(chat => {
+    tgSend_(chat, text, opt.buttons && opt.buttons.length ? { inline_keyboard: opt.buttons } : null);
   });
 }
 
@@ -717,6 +728,13 @@ function telegramChats() {
   const token = prop_('TELEGRAM_TOKEN');
   if (!token) { console.log('Эхлээд TELEGRAM_TOKEN тохиргоог нэмнэ үү.'); return; }
   const r = JSON.parse(UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates', { muteHttpExceptions: true }).getContentText());
+  if (r.error_code === 409) {
+    // Товчнууд (webhook) идэвхтэй үед getUpdates ажиллахгүй: сүүлд бичсэн, эрхгүй чатуудыг харуулна
+    const seen = JSON.parse(CacheService.getScriptCache().get('tg_seen') || '[]');
+    if (!seen.length) console.log('Шинэ чат олдсонгүй. Нэмэх хүн ботод /start гэж бичээд дахин ажиллуулна уу.');
+    seen.forEach(x => console.log(x));
+    return;
+  }
   if (!r.ok) { console.log('Токен буруу эсвэл бот идэвхгүй: ' + JSON.stringify(r).slice(0, 200)); return; }
   const seen = {};
   (r.result || []).forEach(u => {
@@ -725,4 +743,274 @@ function telegramChats() {
     console.log((c.type === 'private' ? '👤 ' + [c.first_name, c.last_name].filter(Boolean).join(' ') : '👥 ' + c.title) + '  →  ' + c.id);
   });
   if (!Object.keys(seen).length) console.log('Чат олдсонгүй. Ботод эсвэл бот нэмсэн группт /start гэж бичээд дахин ажиллуулна уу.');
+}
+
+/* ===================== Telegram товчнууд ===================== */
+/*
+ * Захирлын групп, систем админ (мөн менежерийн групп тохируулсан бол) Telegram-аас шууд:
+ *   • мэдэгдлийн доорх товчоор урьдчилгаа / бүрэн төлбөр бүртгэх, 24 цаг сунгах, цуцлах
+ *   • цэс: өнөөдрийн байдал, авлага, хугацаа дуусах, хайх
+ * Идэвхжүүлэх: кодыг шинэ хувилбараар deploy хийсний дараа tgConnect()-ийг нэг удаа ажиллуулна.
+ */
+const WEB_URL = 'https://script.google.com/macros/s/AKfycbyIG0JUpqjVomlhgLR0aTFaDAyPsaseZGvfSR2GGjVZZtlDsAazwHS74kNfuEQPjfuE/exec';
+const ST_NAME = { free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' };
+const ST_ICON = { free: '⬜', held: '🟨', adv: '🟧', paid: '🟥' };
+const TG_MENU = [['📊 Өнөөдрийн байдал', 'status'], ['💰 Авлага', 'due'], ['⏰ Хугацаа дуусах', 'soon'], ['🔎 Хайх', 'find']];
+
+function tg_(method, payload) {
+  const token = prop_('TELEGRAM_TOKEN');
+  if (!token) return {};
+  try {
+    const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(payload || {})
+    });
+    return JSON.parse(r.getContentText() || '{}');
+  } catch (e) { return {}; }
+}
+function tgSend_(chat, text, markup, extra) {
+  return tg_('sendMessage', Object.assign({ chat_id: chat, text: String(text).slice(0, 4000), disable_web_page_preview: true }, markup ? { reply_markup: markup } : {}, extra || {}));
+}
+function tgEdit_(msg, text, kb) {
+  tg_('editMessageText', { chat_id: msg.chat.id, message_id: msg.message_id, text: String(text).slice(0, 4000), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb || [] } });
+}
+function tgMenuKb_() {
+  return [TG_MENU.slice(0, 2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), TG_MENU.slice(2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] }))];
+}
+function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'HH:mm'); }
+
+/** Зөвхөн тохируулсан чатуудаас ирсэн командыг хүлээн авна. */
+function tgWho_(chatId, from) {
+  const id = String(chatId || '');
+  if (!id) return null;
+  const boss = [prop_('TELEGRAM_DIRECTOR'), prop_('TELEGRAM_ADMIN')].filter(Boolean).map(String).indexOf(id) >= 0;
+  const staff = !boss && prop_('TELEGRAM_CHAT') && String(prop_('TELEGRAM_CHAT')) === id;
+  if (!boss && !staff) return null;
+  const name = [from && from.first_name, from && from.last_name].filter(Boolean).join(' ') || 'Telegram';
+  return { name: name + ' (Telegram)', short: name, role: boss ? 'admin' : 'staff', chat: id };
+}
+
+/** Лангууны төлөвөөс хамаарах товчнууд. callback_data: үйлдэл|үзэсгэлэн|лангуу|одоогийн төлөв */
+function tgButtons_(e, b) {
+  const k = (t, a) => ({ text: t, callback_data: [a, e.id, b.boothId, b.status].join('|') });
+  if (b.status === 'held') return [[k('✅ Урьдчилгаа орсон', 'adv'), k('💵 Бүтэн төлсөн', 'paid')], [k('⏳ 24 цаг сунгах', 'ext'), k('❌ Цуцлах', 'ask')]];
+  if (b.status === 'adv') return [[k('💵 Үлдэгдэл орсон', 'paid')], [k('❌ Цуцлах', 'ask')]];
+  return [];
+}
+
+function heldMs_(b) { return b.heldAt instanceof Date ? b.heldAt.getTime() : (Date.parse(b.heldAt) || 0); }
+function deadline_(e, b) { const t = heldMs_(b); return t ? t + (num_(e.holdHours, 48) || 48) * 3600e3 : 0; }
+function left_(t) {
+  const h = (t - Date.now()) / 3600e3;
+  return h <= 0 ? 'хугацаа дууссан' : h < 1 ? Math.max(1, Math.round(h * 60)) + ' минут үлдсэн' : Math.floor(h) + ' цаг үлдсэн';
+}
+function money_(e, b, cats) {
+  const p = priceOf_(b, cats), adv = (num_(e.advancePct, 50) || 50) / 100;
+  const got = b.status === 'paid' ? p : b.status === 'adv' ? Math.round(p * adv) : 0;
+  return { price: p, got, owe: BOOKED[b.status] ? p - got : 0 };
+}
+function tgCard_(e, b, cats) {
+  const m = money_(e, b, cats);
+  return ST_ICON[b.status || 'free'] + ' ' + b.code + ' · ' + e.name + '\n' + (b.org || '') + (b.person ? ', ' + b.person : '') + (b.tel ? '\n📞 ' + b.tel : '') +
+    '\n' + ST_NAME[b.status || 'free'] + ' · Дүн ' + fmt_(m.price) + '₮' + (m.owe ? ', үлдэгдэл ' + fmt_(m.owe) + '₮' : '') +
+    (b.status === 'held' ? '\n⏳ ' + left_(deadline_(e, b)) : '');
+}
+
+/** Нээлттэй үзэсгэлэнгүүд, тус бүрийн салбар, лангуу. Хугацаа нь дууссан түр захиалгыг сул гэж тооцно. */
+function tgData_(all) {
+  const cats = readAll_(SH.CAT), booths = readAll_(SH.BOOTH), now = Date.now();
+  return readAll_(SH.EXPO).filter(e => all || e.status === 'open').map(e => {
+    e.holdHours = num_(e.holdHours, 48) || 48; e.advancePct = num_(e.advancePct, 50) || 50;
+    const bs = booths.filter(b => String(b.expoId) === String(e.id));
+    bs.forEach(b => { if (b.status === 'held' && deadline_(e, b) && deadline_(e, b) <= now) b.status = 'free'; });
+    return { e, cats: cats.filter(c => String(c.expoId) === String(e.id)), booths: bs };
+  });
+}
+
+function tgUpdate_(u, p) {
+  const sec = prop_('TG_SECRET');
+  if (!sec || String(p.k || '') !== sec) return;
+  const cache = CacheService.getScriptCache(), uk = 'tgu_' + u.update_id;
+  if (cache.get(uk)) return; // Telegram давтан илгээвэл нэг л удаа гүйцэтгэнэ
+  cache.put(uk, '1', 21600);
+  if (u.callback_query) return tgCallback_(u.callback_query);
+  const m = u.message;
+  if (!m || !m.chat) return;
+  const who = tgWho_(m.chat.id, m.from);
+  if (!who) { tgRemember_(m.chat); return; }
+  const text = String(m.text || '').trim();
+  if (!text) return;
+  const cmd = text.split(/[\s@]/)[0].toLowerCase(), fk = 'tgf_' + who.chat + '_' + (m.from && m.from.id);
+  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.', { inline_keyboard: tgMenuKb_() });
+  const hit = TG_MENU.find(x => text === x[0] || cmd === '/' + x[1]);
+  if (hit) return tgMenuDo_(hit[1], who, m.from, m.message_id);
+  const toBot = m.reply_to_message && m.reply_to_message.from && m.reply_to_message.from.is_bot;
+  if (cache.get(fk) || toBot || /^\d{8}$/.test(text.replace(/[\s-]/g, ''))) { cache.remove(fk); return tgFind_(who, text); }
+}
+
+/** Эрхгүй чатыг telegramChats()-д харуулахаар түр хадгална. */
+function tgRemember_(c) {
+  try {
+    const cache = CacheService.getScriptCache(), seen = JSON.parse(cache.get('tg_seen') || '[]');
+    const line = (c.type === 'private' ? '👤 ' + [c.first_name, c.last_name].filter(Boolean).join(' ') : '👥 ' + c.title) + '  →  ' + c.id;
+    if (seen.indexOf(line) < 0) { seen.push(line); cache.put('tg_seen', JSON.stringify(seen.slice(-20)), 21600); }
+  } catch (e) {}
+}
+
+function tgMenuDo_(what, who, from, replyTo) {
+  if (what === 'status') return tgStatus_(who);
+  if (what === 'due') return tgDue_(who);
+  if (what === 'soon') return tgSoon_(who);
+  if (what === 'find') {
+    CacheService.getScriptCache().put('tgf_' + who.chat + '_' + (from && from.id), '1', 600);
+    return tgSend_(who.chat, '🔎 Утасны дугаар эсвэл байгууллагын нэрийг бичээд илгээнэ үү.', { force_reply: true, selective: true, input_field_placeholder: '99112233 эсвэл Номин' },
+      replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : null);
+  }
+}
+
+function tgStatus_(who) {
+  const data = tgData_();
+  if (!data.length) return tgSend_(who.chat, 'Одоогоор захиалга нээлттэй үзэсгэлэн алга.', { inline_keyboard: tgMenuKb_() });
+  const boss = who.role === 'admin';
+  const parts = data.map(d => {
+    const n = { free: 0, held: 0, adv: 0, paid: 0 }; let got = 0, owe = 0;
+    d.booths.forEach(b => { n[BOOKED[b.status] ? b.status : 'free']++; const m = money_(d.e, b, d.cats); got += m.got; owe += m.owe; });
+    const sold = n.adv + n.paid, tot = d.booths.length;
+    return '🏢 ' + d.e.name + (d.e.start ? ' (' + iso_(d.e.start) + ')' : '') +
+      '\nЗарагдсан: ' + sold + '/' + tot + ' (' + (tot ? Math.round(sold / tot * 100) : 0) + '%)' +
+      '\n🟥 Бүрэн ' + n.paid + ' · 🟧 Урьдчилгаа ' + n.adv + ' · 🟨 Түр ' + n.held + ' · ⬜ Сул ' + n.free +
+      (boss ? '\n💵 Орсон ' + fmt_(got) + '₮ · Авлага ' + fmt_(owe) + '₮' : '');
+  });
+  tgSend_(who.chat, '📊 Өнөөдрийн байдал · ' + hhmm_() + '\n\n' + parts.join('\n\n'), { inline_keyboard: tgMenuKb_() });
+}
+
+function tgDue_(who) {
+  const data = tgData_(), lines = [];
+  let total = 0, count = 0;
+  data.forEach(d => {
+    const list = d.booths.filter(b => BOOKED[b.status] && b.status !== 'paid')
+      .sort((a, b) => (a.status === 'held' ? deadline_(d.e, a) : 9e15) - (b.status === 'held' ? deadline_(d.e, b) : 9e15));
+    if (!list.length) return;
+    lines.push('\n🏢 ' + d.e.name);
+    list.forEach(b => {
+      const m = money_(d.e, b, d.cats); total += m.owe; count++;
+      lines.push(ST_ICON[b.status] + ' ' + b.code + ' ' + (b.org || '') + (b.tel ? ' · ' + b.tel : '') + ' — ' + fmt_(m.owe) + '₮' + (b.status === 'held' ? ' · ' + left_(deadline_(d.e, b)) : ''));
+    });
+  });
+  if (!count) return tgSend_(who.chat, '💰 Авлага алга. Бүх захиалга бүрэн төлөгдсөн ✅', { inline_keyboard: tgMenuKb_() });
+  let text = '💰 Авлага — ' + count + ' лангуу' + (who.role === 'admin' ? ', нийт ' + fmt_(total) + '₮' : '') + '\n🟨 түр барьсан · 🟧 урьдчилгаа төлсөн\n' + lines.join('\n');
+  if (text.length > 3800) text = text.slice(0, 3700) + '\n…\nБүтэн жагсаалтыг ажилтны хуудаснаас харна уу.';
+  tgSend_(who.chat, text + '\n\nЛангууг товчоор шинэчлэх бол 🔎 Хайх ашиглана уу.', { inline_keyboard: tgMenuKb_() });
+}
+
+function tgSoon_(who) {
+  const now = Date.now(), list = [];
+  tgData_().forEach(d => d.booths.forEach(b => {
+    if (b.status === 'held' && deadline_(d.e, b) - now < 24 * 3600e3) list.push({ d, b, t: deadline_(d.e, b) });
+  }));
+  if (!list.length) return tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах лангуу алга ✅', { inline_keyboard: tgMenuKb_() });
+  list.sort((a, b) => a.t - b.t);
+  tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах: ' + list.length + ' лангуу' + (list.length > 10 ? ' (эхний 10)' : ''));
+  list.slice(0, 10).forEach(x => tgSend_(who.chat, tgCard_(x.d.e, x.b, x.d.cats), { inline_keyboard: tgButtons_(x.d.e, x.b) }));
+}
+
+function tgFind_(who, q) {
+  q = String(q || '').trim();
+  const digits = q.replace(/\D/g, ''), low = q.toLowerCase(), found = [];
+  if (digits.length < 4 && low.length < 2) return tgSend_(who.chat, 'Дор хаяж 4 оронтой утас эсвэл 2 үсэгтэй нэр бичнэ үү.', { inline_keyboard: tgMenuKb_() });
+  tgData_(true).forEach(d => d.booths.forEach(b => {
+    if (!BOOKED[b.status]) return;
+    const byTel = digits.length >= 4 && digits.length === q.replace(/[\s-]/g, '').length && String(b.tel || '').indexOf(digits) >= 0;
+    const byOrg = !byTel && String(b.org || '').toLowerCase().indexOf(low) >= 0;
+    if (byTel || byOrg) found.push({ d, b });
+  }));
+  if (!found.length) return tgSend_(who.chat, '🔎 "' + q + '" — захиалга олдсонгүй.', { inline_keyboard: tgMenuKb_() });
+  tgSend_(who.chat, '🔎 "' + q + '" — ' + found.length + ' захиалга' + (found.length > 10 ? ' (эхний 10)' : ''));
+  found.slice(0, 10).forEach(x => tgSend_(who.chat, tgCard_(x.d.e, x.b, x.d.cats), { inline_keyboard: x.d.e.status === 'open' ? tgButtons_(x.d.e, x.b) : [] }));
+}
+
+function tgCallback_(q) {
+  const msg = q.message || {}, who = tgWho_(msg.chat && msg.chat.id, q.from);
+  const ans = (text, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: text || '', show_alert: !!alert });
+  if (!who) return ans('Энэ чатаас үйлдэл хийх эрхгүй.', true);
+  const [act, expoId, boothId, expect] = String(q.data || '').split('|');
+  if (act === 'm') { ans(); return tgMenuDo_(expoId, who, q.from, null); }
+  const current = () => {
+    const e = findExpo_(expoId), b = boothsOf_(e.id).find(x => String(x.boothId) === String(boothId));
+    return { e, b };
+  };
+  try {
+    if (act === 'ask') {
+      ans();
+      const k = (t, a) => ({ text: t, callback_data: [a, expoId, boothId, expect].join('|') });
+      return tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: [[k('❗ Тийм, цуцлах', 'free'), k('↩️ Үгүй', 'no')]] } });
+    }
+    if (act === 'no') {
+      ans('Цуцлаагүй.');
+      const c = current();
+      return tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: c.b ? tgButtons_(c.e, c.b) : [] } });
+    }
+    if (act === 'ext') {
+      const r = extendHold_(expoId, boothId, who);
+      ans('24 цагаар сунгалаа.');
+      return tgEdit_(msg, msg.text + '\n\n⏳ ' + who.short + ' 24 цаг сунгасан · ' + hhmm_() + ' (' + left_(deadline_(r.e, r.b)) + ')', tgButtons_(r.e, r.b));
+    }
+    if (act === 'adv' || act === 'paid' || act === 'free') {
+      const r = changeStatus_({ id: expoId, boothId, status: act, expect }, who);
+      const mark = { adv: '✅ Урьдчилгаа орсон', paid: '💵 Бүрэн төлсөн', free: '❌ Цуцалсан' }[act];
+      ans(mark + ' — хадгаллаа.');
+      tgEdit_(msg, msg.text + '\n\n' + mark + ' · ' + who.short + ' · ' + hhmm_(), tgButtons_(r.e, r.b));
+      return statusNotify_(r, who, who.chat);
+    }
+    ans();
+  } catch (err) {
+    if (!(err && err.userMessage)) { reportError_('telegram товч', err); return ans('Алдаа гарлаа. Дахин оролдоно уу.', true); }
+    ans(err.userMessage, true);
+    // Хуучирсан мэдэгдлийг одоогийн байдлаар шинэчилнэ
+    try { const c = current(); if (c.b) tgEdit_(msg, tgCard_(c.e, c.b, catsOf_(c.e.id)) + '\n\n(' + hhmm_() + '-ийн байдлаар шинэчлэгдсэн)', tgButtons_(c.e, c.b)); } catch (x) {}
+  }
+}
+
+/** Түр захиалгын хугацааг 24 цагаар сунгана. */
+function extendHold_(expoId, boothId, who) {
+  const r = withLock_(() => {
+    const e = findExpo_(expoId), b = boothsOf_(e.id).find(x => String(x.boothId) === String(boothId));
+    if (!b) fail_('Лангуу олдсонгүй.');
+    if (b.status !== 'held') fail_(b.code + ' лангуу одоо "' + ST_NAME[b.status || 'free'] + '" төлөвтэй тул сунгах боломжгүй.');
+    const hold = e.holdHours * 3600e3, from = Math.max(heldMs_(b), Date.now() - hold); // дууссан бол одооноос
+    b.heldAt = new Date(from + 24 * 3600e3);
+    b.updatedAt = new Date(); b.updatedBy = who.name;
+    writeRow_(SH.BOOTH, b);
+    log_(e.id, b.code, 'хугацаа сунгасан', who.name, '24 цаг');
+    return { e, b };
+  });
+  bump_(r.e);
+  return r;
+}
+
+/**
+ * Telegram товчнуудыг идэвхжүүлнэ. Кодыг шинэ хувилбараар deploy хийсний дараа нэг удаа ажиллуулна.
+ * Дахин ажиллуулахад аюулгүй.
+ */
+function tgConnect() {
+  if (!prop_('TELEGRAM_TOKEN')) { console.log('Эхлээд TELEGRAM_TOKEN тохиргоог нэмнэ үү.'); return; }
+  const P = PropertiesService.getScriptProperties();
+  let sec = prop_('TG_SECRET');
+  if (!sec) { sec = Utilities.getUuid().replace(/-/g, ''); P.setProperty('TG_SECRET', sec); }
+  const url = (prop_('WEB_APP_URL') || WEB_URL) + '?k=' + sec;
+  const r = tg_('setWebhook', { url, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
+  console.log(r.ok ? '✅ Товчнууд идэвхжлээ.' : 'АЛДАА: ' + JSON.stringify(r).slice(0, 200));
+  tg_('setMyCommands', { commands: [
+    { command: 'menu', description: 'Үндсэн цэс' },
+    { command: 'status', description: 'Өнөөдрийн байдал' },
+    { command: 'due', description: 'Авлага' },
+    { command: 'soon', description: '24 цагт суллагдах лангуу' },
+    { command: 'find', description: 'Утас, нэрээр хайх' }
+  ] });
+  [prop_('TELEGRAM_DIRECTOR'), prop_('TELEGRAM_ADMIN'), prop_('TELEGRAM_CHAT')].filter((c, i, a) => c && a.indexOf(c) === i).forEach(chat => {
+    const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
+    console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
+  });
+  Utilities.sleep(1500);
+  const info = tg_('getWebhookInfo', {}).result || {};
+  if (info.last_error_message) console.log('Сүүлийн алдаа: ' + info.last_error_message);
 }

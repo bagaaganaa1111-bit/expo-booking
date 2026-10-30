@@ -25,7 +25,7 @@
   <section id="vList" hidden>
     <header class="row spread" style="align-items:flex-end">
       <div><p class="eyebrow" id="hello"></p><h1>Үзэсгэлэнгүүд</h1></div>
-      <div class="row"><button class="btn sm" id="staffBtn" hidden>Ажилтан</button><button class="link" id="logout">Гарах</button></div>
+      <div class="row"><a class="btn sm" id="reportBtn" href="tailan.html" hidden>📊 Тайлан</a><button class="btn sm" id="staffBtn" hidden>Ажилтан</button><button class="link" id="logout">Гарах</button></div>
     </header>
     <form class="card" id="newForm" style="margin-top:16px" novalidate>
       <h2>Шинэ үзэсгэлэн</h2>
@@ -184,7 +184,7 @@ $("#logout").onclick = logout;
 
 /* ---------- Жагсаалт ---------- */
 async function openList() {
-  show("vList"); $("#hello").textContent = USER ? USER.name + " · " + (ROLE_NAME[USER.role] || "") : ""; $("#staffBtn").hidden = !BOSS(); $("#newForm").hidden = false;
+  show("vList"); $("#hello").textContent = USER ? USER.name + " · " + (ROLE_NAME[USER.role] || "") : ""; $("#staffBtn").hidden = !BOSS(); $("#reportBtn").hidden = !BOSS(); $("#newForm").hidden = false;
   $("#expoList").innerHTML = '<div class="loading"><span class="spin"></span>Ачааллаж байна…</div>';
   try {
     const r = await call("expos");
@@ -526,7 +526,11 @@ async function route() {
   if (!USER) { try { USER = (await api("login", { pin: PIN })).user; } catch (e) { logout(); return; } }
   if (location.hash === "#staff") { openStaff(); return; }
   const m = /e=([\w-]+)/.exec(location.hash);
-  if (m) { await openExpo(m[1]); pollT = setInterval(() => { if (!document.hidden && !dirty && !drag && EXPO) openExpo(EXPO.id, true); }, 30000); }
+  if (m) {
+    await openExpo(m[1]);
+    const bm = /[&#]b=([\w-]+)/.exec(location.hash); // тайлангаас ирсэн бол тухайн лангууг сонгоно
+    if (bm && EXPO && byId(bm[1])) { sel = bm[1]; renderPlan(); info(); list(); const el = $('.bt[data-id="' + sel + '"]'); if (el) el.scrollIntoView({ block: "center", inline: "center" }); }
+    pollT = setInterval(() => { if (!document.hidden && !dirty && !drag && EXPO) openExpo(EXPO.id, true); }, 30000); }
   else openList();
 }
 window.addEventListener("hashchange", route);

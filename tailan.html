@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Захиалгын тайлан</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css?v=3">
+<style>
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.tile .k{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.tile .v{font-size:clamp(16px,4.6vw,22px);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+.tile .s{font-size:12px;color:var(--muted)}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;align-items:end}
+.stack{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--bg);gap:2px}
+.stack i{display:block;height:100%;min-width:3px}
+.brow{display:grid;grid-template-columns:minmax(120px,1.2fr) 2fr auto;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.brow:first-child{border-top:0}
+.brow .n{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.brow .c{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.brow .m{font-size:13px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.tbl-wrap{overflow-x:auto;margin:0 -16px;padding:0 16px}
+#tbl th button{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;white-space:nowrap}
+#tbl th button[aria-sort]::after{content:" ▾"}
+#tbl th button[aria-sort="ascending"]::after{content:" ▴"}
+#tbl tbody tr{cursor:pointer}
+#tbl tbody tr:hover{background:var(--accent-soft)}
+#tbl td.num,#tbl th.num{text-align:right;white-space:nowrap}
+#tbl td a{color:inherit}
+#tbl td.c-dl{min-width:130px;font-size:13px}
+.owe{color:var(--paid);font-weight:600}
+@media (max-width:700px){
+  .brow{grid-template-columns:1fr auto;grid-template-areas:"n m" "b b" "c c";row-gap:6px}
+  .brow .n{grid-area:n}.brow .m{grid-area:m}.brow .stack{grid-area:b}.brow .c{grid-area:c}
+  .tiles{grid-template-columns:1fr 1fr;gap:8px}
+  .tbl-wrap{margin:0;padding:0;overflow:visible}
+  #tbl thead{display:none}
+  #tbl,#tbl tbody{display:block;width:100%}
+  #tbl tr{display:grid;grid-template-columns:1fr auto;grid-template-areas:"code st" "org org" "expo expo" "tel owe" "price dl";gap:2px 12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--panel)}
+  #tbl td{border:0;padding:0;min-width:0}
+  #tbl td.c-code{grid-area:code;font-weight:600;font-size:16px}
+  #tbl td.c-st{grid-area:st;text-align:right}
+  #tbl td.c-org{grid-area:org}
+  #tbl td.c-expo{grid-area:expo;font-size:12px;color:var(--muted)}
+  #tbl td.c-tel{grid-area:tel}
+  #tbl td.c-owe{grid-area:owe;text-align:right}
+  #tbl td.c-owe:not(:has(.owe)){font-size:12px;color:var(--muted)}
+  #tbl td.c-owe .owe::before{content:"Үлдэгдэл ";font-weight:400;font-size:12px;color:var(--muted)}
+  #tbl td.c-price{grid-area:price;font-size:12px;color:var(--muted);text-align:left}
+  #tbl td.c-price::before{content:"Дүн "}
+  #tbl td.c-got{display:none}
+  #tbl td.c-dl{grid-area:dl;text-align:right;font-size:12px;min-width:0}
+  #tbl td.c-org .hint{display:inline;margin-left:6px}
+  #tbl td.c-org .hint::before{content:"· "}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Нэвтрэх -->
+  <section id="vLogin" hidden>
+    <header><p class="eyebrow">Захирлын хэсэг</p><h1>Захиалгын тайлан</h1><p class="lead">PIN кодоо оруулж нэвтэрнэ үү.</p></header>
+    <form class="card" id="loginForm" style="max-width:360px;margin-top:16px" novalidate>
+      <label class="f">PIN код<input id="pin" type="password" inputmode="numeric" autocomplete="current-password"></label>
+      <p class="err" id="loginErr" role="alert"></p>
+      <div><button class="btn pri" id="loginBtn" type="submit">Нэвтрэх</button></div>
+    </form>
+  </section>
+
+  <section id="vMain" hidden style="display:flex;flex-direction:column;gap:16px">
+    <header class="row spread" style="align-items:flex-end">
+      <div><a class="link" href="admin.html">← Ажилтны хуудас</a><h1 style="margin-top:6px">Захиалгын тайлан</h1><p class="hint" id="updated"></p></div>
+      <div class="row"><button class="btn sm" id="refresh" type="button">↻ Шинэчлэх</button><button class="link" id="logout" type="button">Гарах</button></div>
+    </header>
+
+    <div class="card">
+      <div class="filters">
+        <label class="f">Үзэсгэлэн<select id="fExpo"></select></label>
+        <label class="f" id="fCatWrap" hidden>Салбар<select id="fCat"></select></label>
+        <label class="f">Хайх<input id="fQ" type="text" placeholder="Байгууллага, утас, лангуу" autocomplete="off"></label>
+      </div>
+      <div class="chips" id="fSt" role="group" aria-label="Төлөв"></div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="row spread"><h2 id="bTitle">Үзэсгэлэн тус бүрээр</h2>
+        <div class="legend"><span><i style="background:var(--paid)"></i>Бүрэн</span><span><i style="background:var(--adv)"></i>Урьдчилгаа</span><span><i style="background:var(--held)"></i>Түр барьсан</span><span><i style="background:var(--line)"></i>Сул</span></div></div>
+      <div id="breakdown"></div>
+    </div>
+
+    <div class="card">
+      <div class="row spread"><h2 id="tTitle">Захиалгууд</h2><span class="hint">Мөр дээр дарахад талбайн зураг дээр нээгдэнэ</span></div>
+      <div class="tbl-wrap"><table id="tbl"></table></div>
+    </div>
+  </section>
+
+  <div class="loading" id="pageLoad"><span class="spin"></span><span>Ачааллаж байна…</span></div>
+</div>
+<div id="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="common.js?v=3"></script>
+<script>
+let PIN = store("expo-pin") || "", D = null, timer = null;
+const ST = { free: "Сул", held: "Түр барьсан", adv: "Урьдчилгаа төлсөн", paid: "Бүрэн төлсөн" };
+const STC = { free: "var(--line)", held: "var(--held)", adv: "var(--adv)", paid: "var(--paid)" };
+const CHIPS = [["booked", "Захиалгатай"], ["all", "Бүгд"], ["held", "Түр барьсан"], ["adv", "Урьдчилгаа"], ["paid", "Бүрэн төлсөн"], ["free", "Сул"], ["owe", "Үлдэгдэлтэй"]];
+const F = Object.assign({ expo: "open", cat: "", st: "booked", q: "", sort: "dl", dir: 1 }, JSON.parse(store("expo-report-f") || "{}"));
+const saveF = () => store("expo-report-f", JSON.stringify({ expo: F.expo, st: F.st, sort: F.sort, dir: F.dir }));
+const show = id => { ["vLogin", "vMain"].forEach(v => $("#" + v).hidden = v !== id); $("#pageLoad").hidden = true; };
+const hhmm = t => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const left = t => { const h = (t - Date.now()) / 3600e3; return h <= 0 ? "дууссан" : h < 1 ? Math.max(1, Math.round(h * 60)) + " мин" : Math.floor(h) + " цаг"; };
+const fmtD = t => { if (!t) return ""; const d = new Date(t); return (d.getMonth() + 1) + "/" + d.getDate() + " " + hhmm(t); };
+
+/* ---------- Нэвтрэх ---------- */
+$("#loginForm").onsubmit = async e => {
+  e.preventDefault(); const p = $("#pin").value.trim(); $("#loginErr").textContent = "";
+  if (!p) { $("#loginErr").textContent = "PIN кодоо оруулна уу."; return; }
+  $("#loginBtn").disabled = true;
+  try { const r = await api("login", { pin: p }); if (r.user.role === "staff") { $("#loginErr").textContent = "Тайланг зөвхөн захирал харна."; return; } PIN = p; store("expo-pin", p); load(); }
+  catch (err) { $("#loginErr").textContent = err.message; }
+  finally { $("#loginBtn").disabled = false; }
+};
+$("#logout").onclick = () => { PIN = ""; store("expo-pin", null); clearInterval(timer); show("vLogin"); };
+
+/* ---------- Өгөгдөл ---------- */
+async function load(quiet) {
+  if (!PIN) { show("vLogin"); return; }
+  if (!quiet) { $("#pageLoad").hidden = false; }
+  $("#refresh").disabled = true;
+  try {
+    D = await api("report", { pin: PIN });
+    D.skew = Date.now() - D.now;
+    if (!D.expos.some(e => e.id === F.expo) && F.expo !== "open" && F.expo !== "all") F.expo = "open";
+    show("vMain"); filters(); render();
+    $("#updated").textContent = "Шинэчилсэн " + hhmm(Date.now()) + " · минут тутам автоматаар шинэчлэгдэнэ";
+  } catch (e) {
+    if (e.server && /PIN код|зөвхөн захирал/.test(e.message)) { PIN = ""; store("expo-pin", null); show("vLogin"); $("#loginErr").textContent = e.message; return; }
+    if (!D) { show("vLogin"); $("#loginErr").textContent = e.message; } else toast(e.message);
+  } finally { $("#refresh").disabled = false; }
+}
+$("#refresh").onclick = () => load(true);
+function startTimer() { clearInterval(timer); timer = setInterval(() => { if (!document.hidden && D) load(true); }, 60000); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && D) load(true); });
+
+/* ---------- Шүүлтүүр ---------- */
+function expoSel() { return F.expo === "all" ? D.expos : F.expo === "open" ? D.expos.filter(e => e.status === "open") : D.expos.filter(e => e.id === F.expo); }
+function filters() {
+  const sorted = D.expos.slice().sort((a, b) => (b.status === "open") - (a.status === "open") || String(b.start).localeCompare(String(a.start)));
+  const nOpen = D.expos.filter(e => e.status === "open").length;
+  $("#fExpo").innerHTML = '<option value="open">Нээлттэй бүгд (' + nOpen + ')</option><option value="all">Бүх үзэсгэлэн (' + D.expos.length + ')</option>' +
+    sorted.map(e => '<option value="' + esc(e.id) + '">' + esc(e.name) + ({ open: "", draft: " · бэлтгэл", closed: " · хаагдсан" }[e.status] || "") + '</option>').join("");
+  $("#fExpo").value = F.expo;
+  const one = expoSel().length === 1 ? expoSel()[0] : null;
+  $("#fCatWrap").hidden = !one;
+  if (one) {
+    const cs = D.cats.filter(c => c.e === one.id);
+    if (!cs.some(c => c.id === F.cat)) F.cat = "";
+    $("#fCat").innerHTML = '<option value="">Бүх салбар</option>' + cs.map(c => '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>').join("");
+    $("#fCat").value = F.cat;
+  } else F.cat = "";
+  $("#fSt").innerHTML = CHIPS.map(c => '<button type="button" data-st="' + c[0] + '" aria-pressed="' + (F.st === c[0]) + '">' + c[1] + '</button>').join("");
+  $("#fQ").value = F.q;
+}
+$("#fExpo").onchange = () => { F.expo = $("#fExpo").value; F.cat = ""; saveF(); filters(); render(); };
+$("#fCat").onchange = () => { F.cat = $("#fCat").value; render(); };
+$("#fQ").oninput = () => { F.q = $("#fQ").value; render(); };
+$("#fSt").onclick = e => { const b = e.target.closest("[data-st]"); if (!b) return; F.st = b.dataset.st; saveF(); filters(); render(); };
+
+/* ---------- Харуулах ---------- */
+function render() {
+  const ex = expoSel(), ids = {}; ex.forEach(e => { ids[e.id] = e; });
+  const q = F.q.trim().toLowerCase(), qd = q.replace(/\D/g, "");
+  const base = D.booths.filter(b => ids[b.e] && (!F.cat || b.cat === F.cat) &&
+    (!q || String(b.code).toLowerCase().includes(q) || String(b.org || "").toLowerCase().includes(q) || (qd.length >= 3 && String(b.tel || "").includes(qd))));
+  tiles(base); breakdown(base, ex); table(base, ex.length > 1);
+}
+
+function sums(list) {
+  const n = { free: 0, held: 0, adv: 0, paid: 0 }; let got = 0, owe = 0, total = 0, sold = 0, soldM = 0;
+  list.forEach(b => { n[b.st]++; total += b.price; got += b.got; if (b.st !== "free") owe += b.price - b.got; if (b.st === "adv" || b.st === "paid") { sold += b.price; } });
+  return { n, got, owe, total, sold, cnt: list.length };
+}
+function tiles(list) {
+  const s = sums(list), done = s.n.adv + s.n.paid, now = Date.now() - D.skew;
+  const soon = list.filter(b => b.st === "held" && b.dl && b.dl - now < 24 * 3600e3).length;
+  const T = (k, v, sub, color) => '<div class="tile"><span class="k">' + k + '</span><span class="v"' + (color ? ' style="color:' + color + '"' : "") + '>' + v + '</span>' + (sub ? '<span class="s">' + sub + '</span>' : "") + '</div>';
+  $("#tiles").innerHTML =
+    T("Зарагдсан лангуу", done + " / " + s.cnt, (s.cnt ? Math.round(done / s.cnt * 100) : 0) + "% · урьдчилгаа эсвэл бүрэн төлсөн") +
+    T("Түр барьсан", s.n.held, soon ? "⏳ " + soon + " нь 24 цагт суллагдана" : "Төлбөр хүлээгдэж байна", soon ? "var(--held)" : "") +
+    T("Орсон мөнгө", fmt(s.got) + "₮", "Боломжит орлогын " + (s.total ? Math.round(s.got / s.total * 100) : 0) + "%", "var(--free)") +
+    T("Авлага", fmt(s.owe) + "₮", "Захиалсан ч төлөгдөөгүй дүн", s.owe ? "var(--paid)" : "") +
+    T("Боломжит орлого", fmt(s.total) + "₮", "Бүх лангуу зарагдвал") +
+    T("Сул лангуу", s.n.free, fmt(list.filter(b => b.st === "free").reduce((a, b) => a + b.price, 0)) + "₮-ийн үнэтэй");
+}
+function stack(n, tot) {
+  return '<div class="stack" role="img" aria-label="Бүрэн ' + n.paid + ', урьдчилгаа ' + n.adv + ', түр ' + n.held + ', сул ' + n.free + '">' +
+    ["paid", "adv", "held", "free"].filter(k => n[k]).map(k => '<i title="' + ST[k] + ': ' + n[k] + '" style="flex:' + n[k] + ';background:' + STC[k] + '"></i>').join("") + '</div>';
+}
+function breakdown(list, ex) {
+  let groups;
+  if (ex.length === 1) {
+    $("#bTitle").textContent = "Салбар тус бүрээр";
+    groups = D.cats.filter(c => c.e === ex[0].id).map(c => ({ name: c.name, dot: c.color, list: list.filter(b => b.cat === c.id) }));
+  } else {
+    $("#bTitle").textContent = "Үзэсгэлэн тус бүрээр";
+    groups = ex.map(e => ({ name: e.name, sub: [e.start, e.end].filter(Boolean).join(" – "), list: list.filter(b => b.e === e.id) }));
+  }
+  groups = groups.filter(g => g.list.length);
+  $("#breakdown").innerHTML = groups.length ? groups.map(g => {
+    const s = sums(g.list);
+    return '<div class="brow"><div class="n">' + (g.dot ? '<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + esc(g.dot) + ';margin-right:6px"></span>' : "") + esc(g.name) +
+      (g.sub ? '<div class="hint">' + esc(g.sub) + '</div>' : "") + '</div>' + stack(s.n) +
+      '<div class="m"><b>' + fmt(s.got) + '₮</b> / ' + fmt(s.total) + '₮</div>' +
+      '<div class="c">🟥 ' + s.n.paid + ' · 🟧 ' + s.n.adv + ' · 🟨 ' + s.n.held + ' · ⬜ ' + s.n.free + ' · зарагдсан ' + (s.cnt ? Math.round((s.n.adv + s.n.paid) / s.cnt * 100) : 0) + '%</div></div>';
+  }).join("") : '<p class="hint">Энэ шүүлтүүрт тохирох лангуу алга.</p>';
+}
+
+const COLS = [["code", "Лангуу"], ["expo", "Үзэсгэлэн"], ["org", "Байгууллага"], ["tel", "Утас"], ["st", "Төлөв"], ["price", "Дүн", 1], ["got", "Төлсөн", 1], ["owe", "Үлдэгдэл", 1], ["dl", "Хугацаа"]];
+const STO = { held: 0, adv: 1, paid: 2, free: 3 };
+function table(list, multi) {
+  const names = {}; D.expos.forEach(e => { names[e.id] = e.name; });
+  let rows = list.filter(b => F.st === "all" || (F.st === "booked" ? b.st !== "free" : F.st === "owe" ? b.st !== "free" && b.price > b.got : b.st === F.st));
+  const val = b => ({ code: b.code, expo: names[b.e], org: b.org || "", tel: b.tel || "", st: STO[b.st], price: b.price, got: b.got, owe: b.st === "free" ? -1 : b.price - b.got, dl: b.st === "held" ? b.dl : 9e15 - (b.at || 0) })[F.sort];
+  rows.sort((a, b) => { const x = val(a), y = val(b); return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "mn", { numeric: true })) * F.dir; });
+  const cols = COLS.filter(c => multi || c[0] !== "expo");
+  $("#tTitle").textContent = (CHIPS.find(c => c[0] === F.st) || [, "Захиалгууд"])[1] + " · " + rows.length;
+  const now = Date.now() - D.skew;
+  $("#tbl").innerHTML = '<thead><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : "") + '><button type="button" data-sort="' + c[0] + '"' + (F.sort === c[0] ? ' aria-sort="' + (F.dir > 0 ? "ascending" : "descending") + '"' : "") + '>' + c[1] + '</button></th>').join("") + '</tr></thead><tbody>' +
+    (rows.length ? rows.slice(0, 500).map(b => {
+      const owe = b.st === "free" ? 0 : b.price - b.got;
+      const cell = { code: esc(b.code), expo: esc(names[b.e]), org: esc(b.org || "—") + (b.person ? '<div class="hint">' + esc(b.person) + '</div>' : ""), tel: b.tel ? '<a href="tel:' + esc(b.tel) + '">' + esc(b.tel) + '</a>' : "—", st: pillHtml(b.st),
+        price: fmt(b.price) + "₮", got: b.got ? fmt(b.got) + "₮" : "—", owe: owe ? '<span class="owe">' + fmt(owe) + "₮</span>" : "—",
+        dl: b.st === "held" ? (b.dl && b.dl - now < 24 * 3600e3 ? "⏳ " : "") + left(b.dl) + " үлдсэн" : b.at ? '<span class="hint">' + esc(fmtD(b.at)) + (b.by ? " · " + esc(b.by) : "") + '</span>' : "" };
+      return '<tr data-e="' + esc(b.e) + '" data-b="' + esc(b.id) + '">' + cols.map(c => '<td data-l="' + c[1] + '" class="c-' + c[0] + (c[2] ? ' num' : "") + '">' + cell[c[0]] + '</td>').join("") + '</tr>';
+    }).join("") : '<tr><td class="hint" colspan="' + cols.length + '">Энэ шүүлтүүрт тохирох лангуу алга.</td></tr>') + '</tbody>';
+}
+$("#tbl").onclick = e => {
+  const s = e.target.closest("[data-sort]");
+  if (s) { if (F.sort === s.dataset.sort) F.dir = -F.dir; else { F.sort = s.dataset.sort; F.dir = ["price", "got", "owe"].includes(F.sort) ? -1 : 1; } saveF(); render(); return; }
+  if (e.target.closest("a")) return;
+  const tr = e.target.closest("tr[data-b]"); if (tr) location.href = "admin.html#e=" + tr.dataset.e + "&b=" + tr.dataset.b;
+};
+
+load(); startTimer();
+</script>
+</body>
+</html>

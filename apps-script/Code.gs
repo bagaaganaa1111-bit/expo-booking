@@ -52,7 +52,7 @@ const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook
 const STAFF = {
   login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
-  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_, poster: apiPoster_
+  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_, poster: apiPoster_, report: apiReport_
 };
 
 function handle_(req) {
@@ -611,6 +611,30 @@ function statusNotify_(r, who, skipChat) {
     { buttons: tgButtons_(r.e, r.b), skip: skipChat });
 }
 
+/* ===================== Тайлан (захирал) ===================== */
+
+/** Бүх үзэсгэлэнгийн лангуу, захиалга, мөнгөн дүн — тайлангийн хуудсанд нэг хүсэлтээр. */
+function apiReport_(req, who) {
+  needBoss_(who);
+  const now = Date.now(), cats = readAll_(SH.CAT), booths = readAll_(SH.BOOTH);
+  const expos = readAll_(SH.EXPO).map(e => ({ id: String(e.id), name: String(e.name), start: iso_(e.start), end: iso_(e.end), status: e.status || 'draft', hold: num_(e.holdHours, 48) || 48, adv: num_(e.advancePct, 50) || 50 }));
+  const byId = {}; expos.forEach(e => { byId[e.id] = e; });
+  const out = [];
+  booths.forEach(b => {
+    const e = byId[String(b.expoId)]; if (!e) return;
+    const cs = cats.filter(c => String(c.expoId) === e.id);
+    let st = b.status || 'free', dl = 0;
+    if (st === 'held') { const t = heldMs_(b); dl = t ? t + e.hold * 3600e3 : 0; if (dl && dl <= now) st = 'free'; }
+    const p = st === 'free' ? listPrice_(b, cs) : priceOf_(b, cs);
+    const got = st === 'paid' ? p : st === 'adv' ? Math.round(p * e.adv / 100) : 0;
+    const r = { e: e.id, id: String(b.boothId), code: String(b.code), m2: num_(b.m2), cat: String(b.catId), st, price: p, got };
+    if (st !== 'free') Object.assign(r, { org: String(b.org || ''), person: String(b.person || ''), tel: String(b.tel || ''), mail: String(b.mail || ''), dl: st === 'held' ? dl : 0,
+      by: String(b.updatedBy || ''), at: b.updatedAt instanceof Date ? b.updatedAt.getTime() : (Date.parse(b.updatedAt) || 0) });
+    out.push(r);
+  });
+  return { expos, cats: cats.map(c => ({ e: String(c.expoId), id: String(c.catId), name: String(c.name), color: String(c.color) })), booths: out, now };
+}
+
 /* ===================== Ажилтан удирдах ===================== */
 
 function apiStaffList_(req, who) {
@@ -803,8 +827,10 @@ function tgSend_(chat, text, markup, extra) {
 function tgEdit_(msg, text, kb) {
   tg_('editMessageText', { chat_id: msg.chat.id, message_id: msg.message_id, text: String(text).slice(0, 4000), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb || [] } });
 }
+const PAGES_URL = 'https://bagaaganaa1111-bit.github.io/expo-booking/';
 function tgMenuKb_() {
-  return [TG_MENU.slice(0, 2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), TG_MENU.slice(2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] }))];
+  const web = prop_('PAGES_URL') || PAGES_URL;
+  return [TG_MENU.slice(0, 2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), TG_MENU.slice(2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
 }
 function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'HH:mm'); }
 

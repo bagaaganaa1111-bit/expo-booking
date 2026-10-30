@@ -42,7 +42,8 @@ function doPost(e) {
   if (body && body.update_id !== undefined) {
     // Telegram-ын товч, команд
     try { tgUpdate_(body, (e && e.parameter) || {}); } catch (err) { reportError_('telegram', err); }
-    return out_({ ok: true });
+    // HtmlService нь шууд 200 буцаана (ContentService-ийн 302 redirect-ийг Telegram алдаа гэж үзээд хойшлуулдаг)
+    return HtmlService.createHtmlOutput('ok');
   }
   return handle_(body);
 }
@@ -133,7 +134,12 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
-function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k) || ''; }
+let PROPS_ = null; // нэг хүсэлтийн дотор тохиргоог нэг л удаа уншина
+function prop_(k) {
+  if (!PROPS_) { try { PROPS_ = PropertiesService.getScriptProperties().getProperties() || {}; } catch (e) { PROPS_ = {}; } }
+  return PROPS_[k] || '';
+}
+function setProp_(k, v) { PropertiesService.getScriptProperties().setProperty(k, v); if (PROPS_) PROPS_[k] = v; }
 function uid_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 10); }
 function num_(v, d) { const n = Number(v); return isFinite(n) ? n : (d || 0); }
 function str_(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
@@ -394,7 +400,7 @@ function folder_() {
   const id = prop_('FOLDER_ID');
   if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
   const f = DriveApp.createFolder('Үзэсгэлэнгийн талбайн зургууд');
-  PropertiesService.getScriptProperties().setProperty('FOLDER_ID', f.getId());
+  setProp_('FOLDER_ID', f.getId());
   return f;
 }
 
@@ -933,42 +939,38 @@ function tgCallback_(q) {
   const ans = (text, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: text || '', show_alert: !!alert });
   if (!who) return ans('Энэ чатаас үйлдэл хийх эрхгүй.', true);
   const [act, expoId, boothId, expect] = String(q.data || '').split('|');
-  if (act === 'm') { ans(); return tgMenuDo_(expoId, who, q.from, null); }
-  const current = () => {
-    const e = findExpo_(expoId), b = boothsOf_(e.id).find(x => String(x.boothId) === String(boothId));
-    return { e, b };
-  };
+  const mark = { adv: '✅ Урьдчилгаа орсон', paid: '💵 Бүрэн төлсөн', free: '❌ Цуцалсан', ext: '⏳ 24 цаг сунгасан' }[act];
+  // Товчны эргэлдэх тэмдгийг шууд зогсооно: хүн хүлээхгүй, ажил ард нь хийгдэнэ
+  ans(mark ? mark + '…' : '');
+  if (act === 'm') return tgMenuDo_(expoId, who, q.from, null);
+  const kb = (rows) => tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: rows } });
+  const k = (t, a) => ({ text: t, callback_data: [a, expoId, boothId, expect].join('|') });
+  if (act === 'ask') return kb([[k('❗ Тийм, цуцлах', 'free'), k('↩️ Үгүй', 'no')]]);
+  if (act === 'no') return kb(tgButtonsFrom_(expoId, boothId, expect));
+  if (!mark) return;
+  kb([[{ text: '⏳ Хадгалж байна…', callback_data: 'x' }]]);
   try {
-    if (act === 'ask') {
-      ans();
-      const k = (t, a) => ({ text: t, callback_data: [a, expoId, boothId, expect].join('|') });
-      return tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: [[k('❗ Тийм, цуцлах', 'free'), k('↩️ Үгүй', 'no')]] } });
-    }
-    if (act === 'no') {
-      ans('Цуцлаагүй.');
-      const c = current();
-      return tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: c.b ? tgButtons_(c.e, c.b) : [] } });
-    }
     if (act === 'ext') {
       const r = extendHold_(expoId, boothId, who);
-      ans('24 цагаар сунгалаа.');
       return tgEdit_(msg, msg.text + '\n\n⏳ ' + who.short + ' 24 цаг сунгасан · ' + hhmm_() + ' (' + left_(deadline_(r.e, r.b)) + ')', tgButtons_(r.e, r.b));
     }
-    if (act === 'adv' || act === 'paid' || act === 'free') {
-      const r = changeStatus_({ id: expoId, boothId, status: act, expect }, who);
-      const mark = { adv: '✅ Урьдчилгаа орсон', paid: '💵 Бүрэн төлсөн', free: '❌ Цуцалсан' }[act];
-      ans(mark + ' — хадгаллаа.');
-      tgEdit_(msg, msg.text + '\n\n' + mark + ' · ' + who.short + ' · ' + hhmm_(), tgButtons_(r.e, r.b));
-      return statusNotify_(r, who, who.chat);
-    }
-    ans();
+    const r = changeStatus_({ id: expoId, boothId, status: act, expect }, who);
+    tgEdit_(msg, msg.text + '\n\n' + mark + ' · ' + who.short + ' · ' + hhmm_(), tgButtons_(r.e, r.b));
+    statusNotify_(r, who, who.chat);
   } catch (err) {
-    if (!(err && err.userMessage)) { reportError_('telegram товч', err); return ans('Алдаа гарлаа. Дахин оролдоно уу.', true); }
-    ans(err.userMessage, true);
-    // Хуучирсан мэдэгдлийг одоогийн байдлаар шинэчилнэ
-    try { const c = current(); if (c.b) tgEdit_(msg, tgCard_(c.e, c.b, catsOf_(c.e.id)) + '\n\n(' + hhmm_() + '-ийн байдлаар шинэчлэгдсэн)', tgButtons_(c.e, c.b)); } catch (x) {}
+    const known = err && err.userMessage;
+    if (!known) reportError_('telegram товч', err);
+    // Алдааг мессеж дээр харуулж, одоогийн байдлаар шинэчилнэ
+    try {
+      const e = findExpo_(expoId), b = boothsOf_(e.id).find(x => String(x.boothId) === String(boothId));
+      if (b) return tgEdit_(msg, tgCard_(e, b, catsOf_(e.id)) + '\n\n⚠️ ' + (known || 'Алдаа гарлаа. Дахин оролдоно уу.') + '\n(' + hhmm_() + '-ийн байдлаар шинэчлэгдсэн)', tgButtons_(e, b));
+    } catch (x) {}
+    tgSend_(who.chat, '⚠️ ' + (known || 'Алдаа гарлаа. Дахин оролдоно уу.'));
   }
 }
+
+/** "Үгүй" дарахад анхны товчнуудыг сэргээнэ (хүснэгт уншихгүй). */
+function tgButtonsFrom_(expoId, boothId, st) { return tgButtons_({ id: expoId }, { boothId, status: st }); }
 
 /** Түр захиалгын хугацааг 24 цагаар сунгана. */
 function extendHold_(expoId, boothId, who) {
@@ -993,9 +995,8 @@ function extendHold_(expoId, boothId, who) {
  */
 function tgConnect() {
   if (!prop_('TELEGRAM_TOKEN')) { console.log('Эхлээд TELEGRAM_TOKEN тохиргоог нэмнэ үү.'); return; }
-  const P = PropertiesService.getScriptProperties();
   let sec = prop_('TG_SECRET');
-  if (!sec) { sec = Utilities.getUuid().replace(/-/g, ''); P.setProperty('TG_SECRET', sec); }
+  if (!sec) { sec = Utilities.getUuid().replace(/-/g, ''); setProp_('TG_SECRET', sec); }
   const url = (prop_('WEB_APP_URL') || WEB_URL) + '?k=' + sec;
   const r = tg_('setWebhook', { url, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
   console.log(r.ok ? '✅ Товчнууд идэвхжлээ.' : 'АЛДАА: ' + JSON.stringify(r).slice(0, 200));
@@ -1013,4 +1014,14 @@ function tgConnect() {
   Utilities.sleep(1500);
   const info = tg_('getWebhookInfo', {}).result || {};
   if (info.last_error_message) console.log('Сүүлийн алдаа: ' + info.last_error_message);
+}
+
+/** Telegram товчны холболтыг шалгана: хүлээгдэж буй мессеж, сүүлийн алдаа. */
+function tgCheck() {
+  const t0 = Date.now(), r = tg_('getWebhookInfo', {}), i = r.result || {};
+  if (!r.ok) { console.log('Telegram-д холбогдож чадсангүй: ' + JSON.stringify(r).slice(0, 200)); return; }
+  console.log('Холбоос: ' + (i.url ? 'тохируулсан' : 'ТОХИРУУЛААГҮЙ — tgConnect ажиллуулна уу'));
+  console.log('Хүлээгдэж буй: ' + (i.pending_update_count || 0));
+  console.log('Сүүлийн алдаа: ' + (i.last_error_message ? i.last_error_message + ' (' + new Date(i.last_error_date * 1000) + ')' : 'алга ✅'));
+  const t1 = Date.now(); readAll_(SH.BOOTH); console.log('Хүснэгт унших хугацаа: ' + (Date.now() - t1) + ' мс, Telegram хариу: ' + (t1 - t0) + ' мс');
 }

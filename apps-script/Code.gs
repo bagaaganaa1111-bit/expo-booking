@@ -6,8 +6,12 @@
  *   CLAUDE_API_KEY   — зураг таних (заавал биш, байхгүй бол гараар тэмдэглэнэ)
  *   CLAUDE_MODEL     — заавал биш, анхдагч: claude-sonnet-5-5
  *   TELEGRAM_TOKEN   — мэдэгдэл илгээх ботын токен (заавал биш)
- *   TELEGRAM_CHAT    — мэдэгдэл очих чат/группын ID (заавал биш)
- *   ADMIN_PIN        — анхны захирлын нэвтрэх PIN (setup() ажиллуулахад ашиглана)
+ *   TELEGRAM_CHAT    — менежерүүдийн группын ID: захиалга, төлбөр, цуцлалт (заавал биш)
+ *   TELEGRAM_DIRECTOR — захирлын хувийн чатын ID: дээрх бүгд + өглөөний санхүүгийн тайлан (заавал биш)
+ *   TELEGRAM_ADMIN   — систем админы хувийн чатын ID: зөвхөн системийн алдаа (заавал биш)
+ *   ADMIN_PIN        — систем админы анхны PIN (setup() ажиллуулахад ашиглана)
+ *
+ * Эрх (Ажилтан хуудасны role багана): system = систем админ, admin = захирал, staff = менежер.
  *
  * Анх суулгахдаа setup() функцийг нэг удаа ажиллуулна.
  */
@@ -42,7 +46,7 @@ const PUBLIC = { expo: apiExpo_, image: apiImage_, book: apiBook_ };
 const STAFF = {
   login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
-  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_
+  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_
 };
 
 function handle_(req) {
@@ -217,7 +221,7 @@ function apiBook_(req) {
     return { e, b, price };
   });
   const adv = Math.round(res.price * res.e.advancePct / 100);
-  notify_('🟨 Шинэ захиалга — ' + res.e.name + '\nЛангуу: ' + res.b.code + ' (' + res.b.m2 + ' м²)\n' + org + (person ? ', ' + person : '') + '\n📞 ' + tel + (mail ? '\n✉️ ' + mail : '') +
+  notify_('ops', '🟨 Шинэ захиалга — ' + res.e.name + '\nЛангуу: ' + res.b.code + ' (' + res.b.m2 + ' м²)\n' + org + (person ? ', ' + person : '') + '\n📞 ' + tel + (mail ? '\n✉️ ' + mail : '') +
     '\nДүн: ' + fmt_(res.price) + '₮, урьдчилгаа ' + fmt_(adv) + '₮\n' + res.e.holdHours + ' цагийн дотор урьдчилгаа орохгүй бол автоматаар суллагдана.');
   return { booking: { code: String(res.b.code), price: res.price, advance: adv, holdHours: res.e.holdHours, org, payInfo: String(res.e.payInfo || '') } };
 }
@@ -230,8 +234,19 @@ function auth_(pin) {
   const same = x => String(x.pin).trim() === pin || (/^\d+$/.test(pin) && /^\d+$/.test(String(x.pin).trim()) && Number(x.pin) === Number(pin));
   const s = readAll_(SH.STAFF).find(x => same(x) && String(x.active).toLowerCase() !== 'false' && String(x.active) !== 'үгүй');
   if (!s) { Utilities.sleep(800); fail_('PIN код буруу байна.'); }
-  return { name: String(s.name), role: String(s.role || 'staff') };
+  return { name: String(s.name), role: role_(s.role) };
 }
+
+/** Ажилтан хуудасны role утгыг system / admin / staff болгоно. */
+function role_(r) {
+  r = String(r || '').trim().toLowerCase();
+  if (['system', 'систем', 'систем админ', 'dev'].indexOf(r) >= 0) return 'system';
+  if (['admin', 'захирал', 'director'].indexOf(r) >= 0) return 'admin';
+  return 'staff';
+}
+const isBoss_ = who => who.role === 'system' || who.role === 'admin';
+function needBoss_(who) { if (!isBoss_(who)) fail_('Энэ үйлдлийг зөвхөн захирал хийх эрхтэй.'); }
+const ROLE_NAME = { system: 'Систем админ', admin: 'Захирал', staff: 'Менежер' };
 
 function apiLogin_(req, who) { return { user: who }; }
 
@@ -255,6 +270,7 @@ function apiCreateExpo_(req, who) {
 }
 
 function apiUpdateExpo_(req, who) {
+  needBoss_(who);
   return withLock_(() => {
     const e = findExpo_(req.id);
     if (req.name !== undefined) e.name = str_(req.name, 120) || e.name;
@@ -355,6 +371,7 @@ function apiDetect_(req, who) {
   const code = resp.getResponseCode();
   if (code !== 200) {
     reportError_('detect', new Error('Claude API ' + code + ': ' + resp.getContentText().slice(0, 300)));
+    if (/credit balance/i.test(resp.getContentText())) { notify_('tech', '💳 Claude API кредит дууссан байна. console.anthropic.com → Billing хэсгээс цэнэглэнэ үү.'); fail_('Зураг таних үйлчилгээний төлбөр дууссан байна. Системийн админд мэдэгдлээ. Түр хугацаанд гараар тэмдэглэнэ үү.'); }
     fail_(code === 401 ? 'Зураг таних түлхүүр буруу байна. Системийн админд хандана уу.' : code === 429 || code === 529 ? 'Зураг таних үйлчилгээ завгүй байна. Хэдэн минутын дараа дахин оролдоно уу.' : 'Зургийг таньж чадсангүй. Дахин оролдох эсвэл гараар тэмдэглэнэ үү.');
   }
   const text = (JSON.parse(resp.getContentText()).content || []).filter(c => c.type === 'text').map(c => c.text).join('');
@@ -402,7 +419,10 @@ function apiSaveBooths_(req, who) {
   return withLock_(() => {
     const e = findExpo_(req.id), cur = boothsOf_(e.id), byId = {};
     cur.forEach(b => { byId[b.boothId] = b; });
-    const cats = inC.map((c, i) => ({ expoId: e.id, catId: str_(c.id, 20) || ('c' + i), name: str_(c.name, 60) || ('Салбар ' + (i + 1)), color: str_(c.color, 9) || PALETTE[i % PALETTE.length], price: Math.max(0, num_(c.price)) }));
+    const curCats = catsOf_(e.id).map(c => { const o = Object.assign({}, c); delete o._row; return o; });
+    // Менежер салбар, үнийг өөрчлөх эрхгүй: серверт байгааг нь хэвээр үлдээнэ
+    const cats = !isBoss_(who) && curCats.length ? curCats
+      : inC.map((c, i) => ({ expoId: e.id, catId: str_(c.id, 20) || ('c' + i), name: str_(c.name, 60) || ('Салбар ' + (i + 1)), color: str_(c.color, 9) || PALETTE[i % PALETTE.length], price: isBoss_(who) ? Math.max(0, num_(c.price)) : 0 }));
     if (!cats.length) fail_('Дор хаяж нэг салбар байх ёстой.');
     const catIds = {}; cats.forEach(c => { catIds[c.catId] = 1; });
     const codes = {}, out = [];
@@ -460,22 +480,61 @@ function apiSetStatus_(req, who) {
   });
   if (!r.same) {
     const t = { free: '⬜ Цуцлагдсан', held: '🟨 Утсаар захиалга', adv: '🟧 Урьдчилгаа орсон', paid: '🟥 Бүрэн төлсөн' }[st];
-    notify_(t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + '\nБүртгэсэн: ' + who.name);
+    notify_('ops', t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')');
   }
   return { status: st };
 }
 
+/* ===================== Ажилтан удирдах ===================== */
+
+function apiStaffList_(req, who) {
+  needBoss_(who);
+  return { staff: readAll_(SH.STAFF).map(s => {
+    const r = role_(s.role), hide = r === 'system' && who.role !== 'system';
+    return { row: s._row, name: String(s.name), role: r, pin: hide ? '' : String(s.pin), active: String(s.active).toLowerCase() !== 'false' && String(s.active) !== 'үгүй', locked: hide };
+  }) };
+}
+
+function apiStaffSave_(req, who) {
+  needBoss_(who);
+  const name = str_(req.name, 60), pin = str_(req.staffPin, 20), role = role_(req.role), active = req.active !== false;
+  if (!name) fail_('Нэрийг оруулна уу.');
+  if (!/^\d{4,8}$/.test(pin)) fail_('PIN нь 4–8 оронтой тоо байна.');
+  if (role === 'system' && who.role !== 'system') fail_('Систем админ эрхийг зөвхөн систем админ олгоно.');
+  return withLock_(() => {
+    const all = readAll_(SH.STAFF), row = num_(req.row), cur = row ? all.find(s => s._row === row) : null;
+    if (row && !cur) fail_('Ажилтан олдсонгүй. Хуудсаа шинэчилнэ үү.');
+    if (cur && role_(cur.role) === 'system' && who.role !== 'system') fail_('Систем админы мэдээллийг өөрчлөх эрхгүй.');
+    if (all.some(s => s !== cur && Number(s.pin) === Number(pin))) fail_('Энэ PIN өөр ажилтанд олгогдсон байна. Өөр PIN сонгоно уу.');
+    if (cur && cur.name === who.name && (!active || role !== role_(cur.role))) fail_('Өөрийнхөө эрхийг өөрчлөх, идэвхгүй болгох боломжгүй.');
+    const o = { name, pin: "'" + pin, role, active: active ? 'тийм' : 'үгүй' };
+    if (cur) { Object.assign(cur, o); writeRow_(SH.STAFF, cur); } else appendRows_(SH.STAFF, [o]);
+    log_('', '', cur ? 'ажилтан засварласан' : 'ажилтан нэмсэн', who.name, name + ' (' + ROLE_NAME[role] + (active ? '' : ', идэвхгүй') + ')');
+    return { saved: true };
+  });
+}
+
 /* ===================== Мэдэгдэл, тайлан ===================== */
 
-function notify_(text) {
-  const token = prop_('TELEGRAM_TOKEN'), chat = prop_('TELEGRAM_CHAT');
-  if (!token || !chat) return;
-  try {
-    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ chat_id: chat, text: text, disable_web_page_preview: true })
-    });
-  } catch (e) {}
+/**
+ * Telegram мэдэгдэл. Хэнд очих нь:
+ *   ops    — менежерийн групп + захирал (захиалга, төлбөр, цуцлалт, суллагдсан)
+ *   report — захирал (санхүүгийн тайлан); захирлын чат тохируулаагүй бол систем админ
+ *   tech   — систем админ (алдаа); тохируулаагүй бол захирал
+ */
+function notify_(kind, text) {
+  const token = prop_('TELEGRAM_TOKEN');
+  if (!token) return;
+  const g = prop_('TELEGRAM_CHAT'), d = prop_('TELEGRAM_DIRECTOR'), a = prop_('TELEGRAM_ADMIN');
+  const to = kind === 'ops' ? [g, d] : kind === 'report' ? [d || a] : kind === 'tech' ? [a || d] : [g, d, a];
+  to.filter((c, i) => c && to.indexOf(c) === i).forEach(chat => {
+    try {
+      UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        payload: JSON.stringify({ chat_id: chat, text: text, disable_web_page_preview: true })
+      });
+    } catch (e) {}
+  });
 }
 
 function reportError_(where, err) {
@@ -484,7 +543,7 @@ function reportError_(where, err) {
     const c = CacheService.getScriptCache(), k = 'err_' + where;
     if (c.get(k)) return;
     c.put(k, '1', 600);
-    notify_('⚠️ Системийн алдаа (' + where + '): ' + String(err && err.message || err).slice(0, 300));
+    notify_('tech', '⚠️ Системийн алдаа (' + where + '): ' + String(err && err.message || err).slice(0, 300));
   } catch (e) {}
 }
 
@@ -493,7 +552,7 @@ function hourlyJob() {
   const freed = withLock_(() => expireHolds_());
   if (!freed.length) return;
   const names = {}; readAll_(SH.EXPO).forEach(e => { names[e.id] = e.name; });
-  notify_('⏰ Урьдчилгаа ороогүй тул суллагдсан:\n' + freed.map(f => '• ' + f.code + ' — ' + (f.org || '') + ' (' + (names[f.expoId] || '') + ')').join('\n'));
+  notify_('ops', '⏰ Урьдчилгаа ороогүй тул суллагдсан:\n' + freed.map(f => '• ' + f.code + ' — ' + (f.org || '') + ' (' + (names[f.expoId] || '') + ')').join('\n'));
 }
 
 /** Өдөр бүр: нээлттэй үзэсгэлэн бүрийн товч тайлан. */
@@ -517,7 +576,7 @@ function dailyReport() {
       'Орсон төлбөр: ' + fmt_(got) + '₮\nАвлага: ' + fmt_(due) + '₮\nБоломжит орлого: ' + fmt_(total) + '₮' +
       (soon.length ? '\n⏳ 24 цагт барьцаа дуусах: ' + soon.join(', ') : ''));
   });
-  notify_('Өглөөний тайлан\n\n' + lines.join('\n\n'));
+  notify_('report', 'Өглөөний тайлан\n\n' + lines.join('\n\n'));
 }
 
 /* ===================== Анхны тохиргоо ===================== */
@@ -527,10 +586,15 @@ function setup() {
   const def = ss_().getSheetByName('Sheet1') || ss_().getSheetByName('Хуудас1');
   if (def && ss_().getSheets().length > 1 && def.getLastRow() === 0) ss_().deleteSheet(def);
   folder_();
-  if (!readAll_(SH.STAFF).length) {
+  const staff = readAll_(SH.STAFF);
+  if (!staff.length) {
     const pin = prop_('ADMIN_PIN') || String(Math.floor(100000 + Math.random() * 900000));
-    appendRows_(SH.STAFF, [{ name: 'Захирал', pin: "'" + pin, role: 'admin', active: 'тийм' }]);
-    console.log('Захирлын PIN: ' + pin + ' — "Ажилтан" хуудаснаас харж, өөрчилж болно.');
+    appendRows_(SH.STAFF, [{ name: 'Систем админ', pin: "'" + pin, role: 'system', active: 'тийм' }]);
+    console.log('Систем админы PIN: ' + pin + ' — "Ажилтан" хуудаснаас харж, өөрчилж болно.');
+  } else if (!staff.some(s => role_(s.role) === 'system')) {
+    const f = staff[0]; f.role = 'system'; if (f.name === 'Захирал') f.name = 'Систем админ';
+    f.pin = "'" + String(f.pin); writeRow_(SH.STAFF, f);
+    console.log('"' + f.name + '" систем админ эрхтэй боллоо. Захирлыг ажилтны хуудасны "Ажилтан" цэсээс нэмнэ үү.');
   }
   ScriptApp.getProjectTriggers().forEach(t => {
     if (['hourlyJob', 'dailyReport'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -541,4 +605,26 @@ function setup() {
 }
 
 /** Telegram тохиргоог шалгах: ажиллуулахад туршилтын мессеж очно. */
-function testTelegram() { notify_('✅ Үзэсгэлэнгийн захиалгын систем Telegram-тай холбогдлоо.'); }
+function testTelegram() {
+  const set = { 'Менежерийн групп (TELEGRAM_CHAT)': prop_('TELEGRAM_CHAT'), 'Захирал (TELEGRAM_DIRECTOR)': prop_('TELEGRAM_DIRECTOR'), 'Систем админ (TELEGRAM_ADMIN)': prop_('TELEGRAM_ADMIN') };
+  Object.keys(set).forEach(k => {
+    if (!set[k]) { console.log(k + ': тохируулаагүй'); return; }
+    const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + prop_('TELEGRAM_TOKEN') + '/sendMessage', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ chat_id: set[k], text: '✅ Лангуу захиалгын систем холбогдлоо — ' + k }) });
+    console.log(k + ': ' + (r.getResponseCode() === 200 ? 'амжилттай' : 'АЛДАА ' + r.getContentText().slice(0, 150)));
+  });
+}
+
+/** Ботод сүүлд мессеж бичсэн чат, группуудын ID-г харуулна. Эхлээд ботод эсвэл группт /start гэж бичнэ. */
+function telegramChats() {
+  const token = prop_('TELEGRAM_TOKEN');
+  if (!token) { console.log('Эхлээд TELEGRAM_TOKEN тохиргоог нэмнэ үү.'); return; }
+  const r = JSON.parse(UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates', { muteHttpExceptions: true }).getContentText());
+  if (!r.ok) { console.log('Токен буруу эсвэл бот идэвхгүй: ' + JSON.stringify(r).slice(0, 200)); return; }
+  const seen = {};
+  (r.result || []).forEach(u => {
+    const m = u.message || u.my_chat_member || u.channel_post || u.edited_message; const c = m && m.chat; if (!c || seen[c.id]) return;
+    seen[c.id] = 1;
+    console.log((c.type === 'private' ? '👤 ' + [c.first_name, c.last_name].filter(Boolean).join(' ') : '👥 ' + c.title) + '  →  ' + c.id);
+  });
+  if (!Object.keys(seen).length) console.log('Чат олдсонгүй. Ботод эсвэл бот нэмсэн группт /start гэж бичээд дахин ажиллуулна уу.');
+}

@@ -25,7 +25,7 @@
   <section id="vList" hidden>
     <header class="row spread" style="align-items:flex-end">
       <div><p class="eyebrow" id="hello"></p><h1>Үзэсгэлэнгүүд</h1></div>
-      <button class="link" id="logout">Гарах</button>
+      <div class="row"><button class="btn sm" id="staffBtn" hidden>Ажилтан</button><button class="link" id="logout">Гарах</button></div>
     </header>
     <form class="card" id="newForm" style="margin-top:16px" novalidate>
       <h2>Шинэ үзэсгэлэн</h2>
@@ -38,6 +38,24 @@
       <div><button class="btn pri" type="submit" id="newBtn">Үүсгэх</button></div>
     </form>
     <div class="expo-list" id="expoList" style="margin-top:16px"></div>
+  </section>
+
+  <!-- Ажилтан удирдах (захирал, систем админ) -->
+  <section id="vStaff" hidden style="display:flex;flex-direction:column;gap:16px">
+    <header><button class="link" id="staffBack">← Бүх үзэсгэлэн</button><h1>Ажилтан</h1><p class="lead">Ажилтан бүр өөрийн PIN-ээр энэ хуудсанд нэвтэрнэ. Ажлаас гарсан хүнийг идэвхгүй болгоход нэвтрэх боломжгүй болно.</p></header>
+    <div class="card"><div class="tbl"><table id="staffTbl"></table></div></div>
+    <form class="card" id="staffForm" novalidate>
+      <h2 id="sfTitle">Шинэ ажилтан нэмэх</h2>
+      <div class="grid">
+        <label class="f">Нэр *<input id="sfName" type="text" placeholder="Б. Сараа"></label>
+        <label class="f">PIN * (4–8 оронтой тоо)<input id="sfPin" type="text" inputmode="numeric" autocomplete="off"></label>
+        <label class="f">Эрх<select id="sfRole"><option value="staff">Менежер</option><option value="admin">Захирал</option><option value="system">Систем админ</option></select></label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--fg);align-self:end;padding-bottom:10px"><input id="sfActive" type="checkbox" checked> Идэвхтэй</label>
+      </div>
+      <p class="hint" id="sfRoleHint"></p>
+      <span class="err" id="sfErr"></span>
+      <div class="row"><button class="btn pri" type="submit" id="sfSave">Хадгалах</button><button class="link" type="button" id="sfCancel" hidden>Болих</button></div>
+    </form>
   </section>
 
   <!-- Нэг үзэсгэлэн -->
@@ -131,11 +149,13 @@ const listPrice = b => Math.round((Number(b.m2) || 0) * (Number(catOf(b).price) 
 const price = b => booked(b) && b.price ? b.price : listPrice(b);
 const byId = id => BOOTHS.find(b => b.id === id);
 
-function show(v) { ["vLogin", "vList", "vExpo"].forEach(x => $("#" + x).hidden = x !== v); $("#pageLoad").hidden = true; window.scrollTo(0, 0); }
+const BOSS = () => !!USER && (USER.role === "system" || USER.role === "admin");
+const ROLE_NAME = { system: "Систем админ", admin: "Захирал", staff: "Менежер" };
+function show(v) { ["vLogin", "vList", "vExpo", "vStaff"].forEach(x => $("#" + x).hidden = x !== v); $("#pageLoad").hidden = true; window.scrollTo(0, 0); }
 function busy(text) { $("#busy").hidden = !text; $("#busyText").textContent = text || ""; $("#upBtn").style.pointerEvents = text ? "none" : ""; $("#detectBtn").disabled = !!text; }
 async function call(a, data, opts) {
   try { return await api(a, Object.assign({ pin: PIN }, data || {}), opts); }
-  catch (e) { if (e.server && /PIN/.test(e.message)) { logout(); } throw e; }
+  catch (e) { if (e.server && /^PIN код(оо)? (буруу|оруулна)/.test(e.message)) { logout(); } throw e; }
 }
 
 /* ---------- Нэвтрэх ---------- */
@@ -152,7 +172,7 @@ $("#logout").onclick = logout;
 
 /* ---------- Жагсаалт ---------- */
 async function openList() {
-  show("vList"); $("#hello").textContent = USER ? "Сайн байна уу, " + USER.name : "";
+  show("vList"); $("#hello").textContent = USER ? USER.name + " · " + (ROLE_NAME[USER.role] || "") : ""; $("#staffBtn").hidden = !BOSS(); $("#newForm").hidden = false;
   $("#expoList").innerHTML = '<div class="loading"><span class="spin"></span>Ачааллаж байна…</div>';
   try {
     const r = await call("expos");
@@ -202,17 +222,19 @@ function render() {
     : "Лангуу тэмдэглэгдээгүй байна. \"Дахин таниулах\" дарах эсвэл доорх зураг дээр гараар нэмнэ үү.";
   $("#cPlan").hidden = !hasImg; $("#cCats").hidden = !hasImg || !hasB; $("#cBook").hidden = !hasB;
   const a = [];
-  if (EXPO.status === "open") a.push('<button class="btn" id="copyLink">Оролцогчийн холбоос хуулах</button><button class="btn warn" id="closeBtn">Захиалга хаах</button>');
-  else a.push('<button class="btn pri" id="openBtn"' + (hasB ? "" : " disabled") + '>Захиалга нээх</button>');
+  if (EXPO.status === "open") a.push('<button class="btn" id="copyLink">Оролцогчийн холбоос хуулах</button>' + (BOSS() ? '<button class="btn warn" id="closeBtn">Захиалга хаах</button>' : ""));
+  else if (BOSS()) a.push('<button class="btn pri" id="openBtn"' + (hasB ? "" : " disabled") + '>Захиалга нээх</button>');
   $("#eActions").innerHTML = a.join("");
   const ob = $("#openBtn"); if (ob) ob.onclick = () => setExpoStatus("open");
   const cb = $("#closeBtn"); if (cb) cb.onclick = () => { if (cb.dataset.arm) setExpoStatus("closed"); else { cb.dataset.arm = 1; cb.textContent = "Дахин дарж хаахыг батална"; } };
   const cl = $("#copyLink"); if (cl) cl.onclick = copyLink;
   const note = $("#eNote");
-  if (EXPO.status !== "open" && hasB) { note.hidden = false; note.textContent = "Лангуу, үнийг шалгаж \"Хадгалах\" дарсны дараа \"Захиалга нээх\" товчоор оролцогчдод нээнэ." + (EXPO.payInfo ? "" : " Доорх тохиргоонд төлбөрийн дансаа оруулахаа мартуузай."); }
+  if (EXPO.status !== "open" && hasB && !BOSS()) { note.hidden = false; note.textContent = "Лангуунуудыг шалгаж \"Хадгалах\" дарна уу. Үнэ тогтоож, захиалга нээх ажлыг захирал хийнэ."; }
+  else if (EXPO.status !== "open" && hasB) { note.hidden = false; note.textContent = "Лангуу, үнийг шалгаж \"Хадгалах\" дарсны дараа \"Захиалга нээх\" товчоор оролцогчдод нээнэ." + (EXPO.payInfo ? "" : " Доорх тохиргоонд төлбөрийн дансаа оруулахаа мартуузай."); }
   else if (EXPO.status === "open") { note.hidden = false; note.innerHTML = "Захиалга нээлттэй. Оролцогчдод илгээх холбоос: <b style=\"word-break:break-all\">" + esc(pubLink()) + "</b>"; }
   else note.hidden = true;
   $("#sName").value = EXPO.name; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
+  $("#cSettings").hidden = !BOSS(); $("#addCat").parentElement.hidden = !BOSS();
   renderPlan(); info(); cats(); stats(); list();
   $("#planHint").textContent = adding ? "Зураг дээр хуруугаараа чирж шинэ лангууны хүрээг зурна." : "Лангуу дээр дарж сонгоно. Сонгосон лангууг чирж зөөнө, баруун доод булангийн дугуйг чирж хэмжээг тааруулна.";
 }
@@ -375,11 +397,12 @@ window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); 
 
 /* ---------- Салбар ---------- */
 function cats() {
+  const ro = BOSS() ? "" : " disabled";
   $("#cats").innerHTML = CATS.map(c => {
     const n = BOOTHS.filter(b => b.cat === c.id).length;
-    return '<div class="cat" data-c="' + esc(c.id) + '"><input type="color" value="' + esc(/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#888888") + '" data-k="color" aria-label="Өнгө"><label class="f"><input type="text" value="' + esc(c.name) + '" data-k="name" aria-label="Салбарын нэр"><span>' + n + ' лангуу</span></label>' +
-      '<label class="f pr">₮ / м²<input type="number" min="0" step="1000" inputmode="numeric" value="' + (c.price || "") + '" data-k="price"></label>' + (n ? "<span></span>" : '<button class="btn sm warn" data-del="1">Устгах</button>') + "</div>";
-  }).join("");
+    return '<div class="cat" data-c="' + esc(c.id) + '"><input type="color" value="' + esc(/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#888888") + '" data-k="color" aria-label="Өнгө"' + ro + '><label class="f"><input type="text" value="' + esc(c.name) + '" data-k="name" aria-label="Салбарын нэр"' + ro + '><span>' + n + ' лангуу</span></label>' +
+      '<label class="f pr">₮ / м²<input type="number" min="0" step="1000" inputmode="numeric" value="' + (c.price || "") + '" data-k="price"' + ro + '></label>' + (n || !BOSS() ? "<span></span>" : '<button class="btn sm warn" data-del="1">Устгах</button>') + "</div>";
+  }).join("") + (BOSS() ? "" : '<p class="hint">Салбар, үнийг захирал тохируулна.</p>');
 }
 $("#cats").addEventListener("change", e => { const row = e.target.closest(".cat"), k = e.target.dataset.k; if (!row || !k) return; const c = CATS.find(x => x.id === row.dataset.c); push(); c[k] = k === "price" ? Math.max(0, +e.target.value || 0) : e.target.value; changed(); renderPlan(); info(); stats(); list(); });
 $("#cats").addEventListener("click", e => { if (!e.target.dataset.del) return; const row = e.target.closest(".cat"); push(); CATS = CATS.filter(x => x.id !== row.dataset.c); changed(); cats(); });
@@ -390,6 +413,10 @@ function stats() {
   let tk = 0, rev = 0, got = 0, due = 0; const adv = EXPO.advancePct / 100;
   BOOTHS.forEach(b => { const p = price(b); rev += p; if (booked(b)) { tk++; due += p; } if (b.status === "adv") got += p * adv; if (b.status === "paid") got += p; });
   const n = BOOTHS.length;
+  if (!BOSS()) {
+    $("#stats").innerHTML = [["Захиалагдсан", tk + " / " + n], ["Түр барьсан", BOOTHS.filter(b => b.status === "held").length], ["Урьдчилгаа төлсөн", BOOTHS.filter(b => b.status === "adv").length], ["Сул", n - tk]].map(a => '<div class="stat"><span>' + a[0] + "</span><strong>" + a[1] + "</strong></div>").join("");
+    return;
+  }
   $("#stats").innerHTML = [["Захиалагдсан", tk + " / " + n + (n ? " · " + Math.round(tk / n * 100) + "%" : "")], ["Орсон төлбөр", fmt(got) + " ₮"], ["Авлага", fmt(due - got) + " ₮"], ["Боломжит орлого", fmt(rev) + " ₮"]].map(a => '<div class="stat"><span>' + a[0] + "</span><strong>" + a[1] + "</strong></div>").join("");
 }
 function list() {
@@ -401,12 +428,46 @@ function list() {
 $("#filter").onchange = list;
 $("#list").addEventListener("click", e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; sel = tr.dataset.id; cancelArm = null; phoneForm = false; renderPlan(); info(); list(); const el = $('.bt[data-id="' + sel + '"]'); if (el) el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); });
 
+/* ---------- Ажилтан ---------- */
+let STAFF_LIST = [], sfRow = 0;
+async function openStaff() {
+  if (!BOSS()) { location.hash = ""; return; }
+  show("vStaff"); resetStaffForm();
+  $("#sfRole").querySelector('[value="system"]').hidden = USER.role !== "system";
+  $("#staffTbl").innerHTML = '<tr><td class="hint">Ачааллаж байна…</td></tr>';
+  try {
+    STAFF_LIST = (await call("staffList")).staff;
+    $("#staffTbl").innerHTML = "<thead><tr><th>Нэр</th><th>Эрх</th><th>PIN</th><th>Төлөв</th><th></th></tr></thead><tbody>" + STAFF_LIST.map(x =>
+      "<tr><td>" + esc(x.name) + (x.name === USER.name ? ' <span class="hint">(та)</span>' : "") + "</td><td>" + ROLE_NAME[x.role] + '</td><td class="mono">' + (x.locked ? "••••" : esc(x.pin)) + "</td><td>" +
+      (x.active ? '<span class="pill" style="color:var(--free);border-color:var(--free)">Идэвхтэй</span>' : '<span class="pill" style="color:var(--muted);border-color:var(--line)">Идэвхгүй</span>') + "</td><td>" +
+      (x.locked ? "" : '<button class="btn sm" data-row="' + x.row + '">Засах</button>') + "</td></tr>").join("") + "</tbody>";
+  } catch (e) { $("#staffTbl").innerHTML = '<tr><td class="err">' + esc(e.message) + "</td></tr>"; }
+}
+const ROLE_HINT = { staff: "Захиалга, төлбөр бүртгэх, лангуу засах. Үнэ, тохиргоо, санхүүгийн дүн харагдахгүй.", admin: "Бүх ажил + үнэ, тохиргоо, захиалга нээх/хаах, санхүүгийн тайлан, ажилтан удирдах.", system: "Захирлын бүх эрх + систем админыг удирдах." };
+function resetStaffForm() { sfRow = 0; $("#staffForm").reset(); $("#sfActive").checked = true; $("#sfTitle").textContent = "Шинэ ажилтан нэмэх"; $("#sfCancel").hidden = true; $("#sfErr").textContent = ""; $("#sfRoleHint").textContent = ROLE_HINT.staff; }
+$("#sfRole").onchange = () => { $("#sfRoleHint").textContent = ROLE_HINT[$("#sfRole").value]; };
+$("#staffTbl").onclick = e => { const b = e.target.closest("[data-row]"); if (!b) return; const x = STAFF_LIST.find(s => String(s.row) === b.dataset.row); sfRow = x.row;
+  $("#sfName").value = x.name; $("#sfPin").value = x.pin; $("#sfRole").value = x.role; $("#sfActive").checked = x.active; $("#sfTitle").textContent = x.name + " — засах"; $("#sfCancel").hidden = false; $("#sfRoleHint").textContent = ROLE_HINT[x.role]; $("#sfErr").textContent = ""; $("#staffForm").scrollIntoView({ behavior: "smooth" }); };
+$("#sfCancel").onclick = resetStaffForm;
+$("#staffForm").onsubmit = async e => {
+  e.preventDefault(); const name = $("#sfName").value.trim(), pin = $("#sfPin").value.trim();
+  if (!name) { $("#sfErr").textContent = "Нэрийг оруулна уу."; return; }
+  if (!/^\d{4,8}$/.test(pin)) { $("#sfErr").textContent = "PIN нь 4–8 оронтой тоо байна."; return; }
+  $("#sfSave").disabled = true;
+  try { await call("staffSave", { row: sfRow, name, staffPin: pin, role: $("#sfRole").value, active: $("#sfActive").checked }); toast(name + " хадгалагдлаа."); openStaff(); }
+  catch (err) { $("#sfErr").textContent = err.message; }
+  finally { $("#sfSave").disabled = false; }
+};
+$("#staffBtn").onclick = () => { location.hash = "staff"; };
+$("#staffBack").onclick = () => { location.hash = ""; };
+
 /* ---------- Чиглүүлэлт ---------- */
 $("#back").onclick = () => { if (dirty && !$("#back").dataset.arm) { $("#back").dataset.arm = 1; $("#back").textContent = "Хадгалаагүй өөрчлөлт алга болно. Дахин дарна уу"; return; } delete $("#back").dataset.arm; $("#back").textContent = "← Бүх үзэсгэлэн"; setDirty(false); location.hash = ""; };
 async function route() {
   clearInterval(pollT);
   if (!PIN) { show("vLogin"); return; }
   if (!USER) { try { USER = (await api("login", { pin: PIN })).user; } catch (e) { logout(); return; } }
+  if (location.hash === "#staff") { openStaff(); return; }
   const m = /e=([\w-]+)/.exec(location.hash);
   if (m) { await openExpo(m[1]); pollT = setInterval(() => { if (!document.hidden && !dirty && !drag && EXPO) openExpo(EXPO.id, true); }, 30000); }
   else openList();

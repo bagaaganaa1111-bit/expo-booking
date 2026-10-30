@@ -48,7 +48,7 @@ function doPost(e) {
   return handle_(body);
 }
 
-const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook_ };
+const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook_, relayPair: apiRelayPair_ };
 const STAFF = {
   login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
@@ -1024,4 +1024,31 @@ function tgCheck() {
   console.log('Хүлээгдэж буй: ' + (i.pending_update_count || 0));
   console.log('Сүүлийн алдаа: ' + (i.last_error_message ? i.last_error_message + ' (' + new Date(i.last_error_date * 1000) + ')' : 'алга ✅'));
   const t1 = Date.now(); readAll_(SH.BOOTH); console.log('Хүснэгт унших хугацаа: ' + (Date.now() - t1) + ' мс, Telegram хариу: ' + (t1 - t0) + ' мс');
+}
+
+/* ===================== VPS зуучлагчийг холбох ===================== */
+
+/** VPS зуучлагчийг холбох 6 оронтой түр код (10 минут, нэг удаа). Токеныг хуулж буулгах шаардлагагүй болгоно. */
+function relayCode() {
+  if (!prop_('TELEGRAM_TOKEN')) { console.log('Эхлээд TELEGRAM_TOKEN тохиргоог нэмнэ үү.'); return; }
+  if (!prop_('TG_SECRET')) setProp_('TG_SECRET', Utilities.getUuid().replace(/-/g, ''));
+  const code = String(Math.floor(100000 + Math.random() * 900000)), c = CacheService.getScriptCache();
+  c.put('relay_code', code, 600); c.remove('relay_fails');
+  console.log('Код: ' + code + '  (10 минут хүчинтэй)');
+  console.log('VPS дээр:  cd /opt/expo-relay && docker compose run --rm relay node relay.mjs pair ' + code);
+}
+
+function apiRelayPair_(req) {
+  const c = CacheService.getScriptCache(), code = c.get('relay_code');
+  if (!code) fail_('Код хүчингүй. Apps Script дээр relayCode-ийг дахин ажиллуулна уу.');
+  if (str_(req.code, 10) !== code) {
+    const n = num_(c.get('relay_fails')) + 1;
+    if (n >= 5) { c.remove('relay_code'); c.remove('relay_fails'); notify_('tech', '🔐 Зуучлагч холбох код 5 удаа буруу оруулсан тул хүчингүй болголоо.'); }
+    else c.put('relay_fails', String(n), 600);
+    Utilities.sleep(1000);
+    fail_('Код буруу байна.');
+  }
+  c.remove('relay_code'); c.remove('relay_fails');
+  notify_('tech', '🔗 VPS зуучлагч холбогдлоо.');
+  return { token: prop_('TELEGRAM_TOKEN'), key: prop_('TG_SECRET') };
 }

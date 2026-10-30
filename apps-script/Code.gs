@@ -18,7 +18,7 @@
 
 const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх' };
 const COLS = {
-  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug'],
+  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
   'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy'],
   'Ажилтан': ['name', 'pin', 'role', 'active'],
@@ -42,7 +42,7 @@ function doPost(e) {
   return handle_(body);
 }
 
-const PUBLIC = { expo: apiExpo_, image: apiImage_, book: apiBook_ };
+const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook_ };
 const STAFF = {
   login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
@@ -186,13 +186,25 @@ function clearBooking_(b) {
 
 /* ===================== Нийтийн (оролцогчийн) API ===================== */
 
+/** Нүүр хуудас: нээлттэй болон удахгүй нээгдэх үзэсгэлэнгүүд. Хаагдсан, дууссан нь харагдахгүй. */
+function apiList_() {
+  const today = iso_(new Date()), booths = readAll_(SH.BOOTH);
+  const items = readAll_(SH.EXPO).filter(e => (e.status === 'open' || !e.status || e.status === 'draft') && !(iso_(e.end) && iso_(e.end) < today)).map(e => {
+    const open = e.status === 'open', bs = open ? booths.filter(b => String(b.expoId) === String(e.id)) : [];
+    return { key: String(e.slug || e.id), name: String(e.name), start: iso_(e.start), end: iso_(e.end), place: String(e.place || ''), about: String(e.about || ''), open,
+      total: bs.length, free: bs.filter(b => !BOOKED[b.status]).length };
+  });
+  items.sort((a, b) => (b.open - a.open) || String(a.start || '9').localeCompare(String(b.start || '9')));
+  return { expos: items };
+}
+
 function apiExpo_(req) {
   const e = findExpo_(req.e);
   if (e.status !== 'open') fail_(e.status === 'closed' ? 'Энэ үзэсгэлэнгийн захиалга хаагдсан байна.' : 'Захиалга хараахан нээгдээгүй байна.');
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
   const cats = catsOf_(e.id);
   return {
-    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
+    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || ''), place: String(e.place || ''), about: String(e.about || '') },
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId,
@@ -274,7 +286,7 @@ function apiCreateExpo_(req, who) {
   const name = str_(req.name, 120);
   if (!name) fail_('Үзэсгэлэнгийн нэрийг оруулна уу.');
   const id = uid_();
-  withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
+  withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, place: str_(req.place, 120), start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
   log_(id, '', 'үзэсгэлэн үүсгэсэн', who.name, name);
   return { id };
 }
@@ -288,6 +300,8 @@ function apiUpdateExpo_(req, who) {
     if (req.end !== undefined) e.end = str_(req.end, 20);
     if (req.holdHours !== undefined) e.holdHours = Math.max(1, Math.min(240, num_(req.holdHours, 48)));
     if (req.slug !== undefined) e.slug = slug_(req.slug, e.id);
+    if (req.place !== undefined) e.place = str_(req.place, 120);
+    if (req.about !== undefined) e.about = str_(req.about, 600);
     if (req.payInfo !== undefined) e.payInfo = str_(req.payInfo, 200);
     if (req.advancePct !== undefined) e.advancePct = Math.max(0, Math.min(100, num_(req.advancePct, 50)));
     if (req.status !== undefined) {
@@ -312,7 +326,7 @@ function apiStaffExpo_(req) {
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
   const cats = catsOf_(e.id);
   return {
-    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
+    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), place: String(e.place || ''), about: String(e.about || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId, status: b.status || 'free',

@@ -14,7 +14,10 @@
     <p class="eyebrow" id="dates">Лангуу захиалга</p>
     <h1 id="title">Үзэсгэлэнгийн лангуу захиалах</h1>
     <p class="lead" id="lead">Талбайн зургаас ногоон хүрээтэй сул лангуугаа сонгоод 1 минутад захиална.</p>
+    <p class="hint" id="about" hidden style="margin-top:8px;max-width:62ch;font-size:14px;white-space:pre-line"></p>
   </header>
+
+  <section id="home" hidden style="display:flex;flex-direction:column;gap:12px"></section>
 
   <div class="loading" id="loading"><span class="spin"></span><span>Талбайн зургийг ачааллаж байна…</span></div>
   <div class="card" id="fatal" hidden><h2>Хуудсыг нээж чадсангүй</h2><p class="hint" id="fatalMsg"></p><div><button class="btn" id="retry">Дахин оролдох</button></div></div>
@@ -53,15 +56,41 @@ try { done = JSON.parse(store(MINE) || "{}") || {}; } catch (e) { done = {}; }
 const catOf = b => D.cats.find(c => c.id === b.cat) || D.cats[0] || { name: "", color: "#ccc", price: 0 };
 const byId = id => D.booths.find(b => b.id === id);
 
+const fmtDate = d => d ? d.replace(/-/g, ".") : "";
+const range = (a, b) => a && b ? fmtDate(a) + " – " + (a.slice(0, 4) === b.slice(0, 4) ? fmtDate(b).slice(5) : fmtDate(b)) : fmtDate(a || b);
+async function home() {
+  const org = window.EXPO_ORG || "";
+  document.title = (org ? org + " — " : "") + "Лангуу захиалга";
+  $("#dates").textContent = org || "Лангуу захиалга"; $("#title").textContent = "Үзэсгэлэнгийн лангуу захиалга";
+  const lt = document.querySelector("#loading span:last-child"); if (lt) lt.textContent = "Ачааллаж байна…";
+  $("#lead").textContent = "Оролцох үзэсгэлэнгээ сонгоод талбайн зургаас сул лангуугаа захиална уу.";
+  try {
+    const r = await api("list");
+    const open = r.expos.filter(x => x.open);
+    if (open.length === 1 && r.expos.length === 1) { location.replace("?e=" + encodeURIComponent(open[0].key)); return; }
+    $("#loading").hidden = true; $("#home").hidden = false;
+    if (!r.expos.length) { $("#home").innerHTML = '<div class="card"><h2>Одоогоор нээлттэй захиалга алга</h2><p class="hint">Шинэ үзэсгэлэнгийн захиалга нээгдэхэд энд харагдана.</p></div>'; return; }
+    $("#home").innerHTML = r.expos.map(x => {
+      const pct = x.total ? Math.round((x.total - x.free) / x.total * 100) : 0;
+      return '<article class="card"><span class="pill" style="align-self:flex-start;color:var(--' + (x.open ? "free" : "muted") + ');border-color:var(--' + (x.open ? "free" : "line") + ')">' + (x.open ? "Захиалга нээлттэй" : "Удахгүй") + '</span>' +
+        '<h2 style="font-size:19px">' + esc(x.name) + '</h2><p class="hint">' + esc([range(x.start, x.end), x.place].filter(Boolean).join(" · ")) + '</p>' +
+        (x.about ? '<p style="margin:0;max-width:62ch;white-space:pre-line">' + esc(x.about) + '</p>' : "") +
+        (x.open ? '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="hint"><b style="color:var(--fg)">' + x.free + '</b> / ' + x.total + ' лангуу сул байна</p><div><a class="btn pri" href="?e=' + encodeURIComponent(x.key) + '">Лангуу захиалах →</a></div>'
+          : '<p class="hint">Захиалга нээгдэхэд энэ хуудсаар захиалах боломжтой болно.</p>') + "</article>";
+    }).join("");
+  } catch (e) { fatal(e.message); }
+}
+
 async function load(first) {
-  if (!EID) { fatal("Холбоос дутуу байна. Зохион байгуулагчаас ирсэн холбоосыг бүтнээр нь нээнэ үү."); return; }
+  if (!EID) { home(); return; }
   try {
     const r = await api("expo", { e: EID });
     const prev = D; D = r;
     if (first) {
       document.title = r.expo.name + " — лангуу захиалах";
       $("#title").textContent = r.expo.name;
-      $("#dates").textContent = [r.expo.start, r.expo.end].filter(Boolean).join(" – ") || "Лангуу захиалга";
+      $("#dates").textContent = [range(r.expo.start, r.expo.end), r.expo.place].filter(Boolean).join(" · ") || "Лангуу захиалга";
+      if (r.expo.about) { $("#about").textContent = r.expo.about; $("#about").hidden = false; }
       $("#hHold").textContent = r.expo.holdHours + " цаг барьцаалагдана";
       $("#hAdv").textContent = r.expo.advancePct + "% урьдчилгаа төлнө";
       const src = await loadImage(r.expo.imageId);
@@ -131,8 +160,8 @@ function info() {
 }
 
 load(true);
-setInterval(() => { if (!document.hidden && D && !busy) load(false); }, 30000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && D && !busy) load(false); });
+setInterval(() => { if (EID && !document.hidden && D && !busy) load(false); }, 30000);
+document.addEventListener("visibilitychange", () => { if (EID && !document.hidden && D && !busy) load(false); });
 </script>
 </body>
 </html>

@@ -96,7 +96,7 @@
     </div>
 
     <div class="card">
-      <div class="row spread"><h2 id="tTitle">Захиалгууд</h2><span class="hint">Мөр дээр дарахад талбайн зураг дээр нээгдэнэ</span></div>
+      <div class="row spread"><h2 id="tTitle">Захиалгууд</h2><div class="row"><span class="hint">Мөр дээр дарахад талбайн зураг дээр нээгдэнэ</span><button class="btn sm" id="xlsx" type="button">📥 Excel татах</button></div></div>
       <div class="tbl-wrap"><table id="tbl"></table></div>
     </div>
   </section>
@@ -180,8 +180,9 @@ function render() {
   const q = F.q.trim().toLowerCase(), qd = q.replace(/\D/g, "");
   const base = D.booths.filter(b => ids[b.e] && (!F.cat || b.cat === F.cat) &&
     (!q || String(b.code).toLowerCase().includes(q) || String(b.org || "").toLowerCase().includes(q) || (qd.length >= 3 && String(b.tel || "").includes(qd))));
-  tiles(base); breakdown(base, ex); table(base, ex.length > 1);
+  LAST = { base, ex }; tiles(base); breakdown(base, ex); table(base, ex.length > 1);
 }
+let LAST = null;
 
 function sums(list) {
   const n = { free: 0, held: 0, adv: 0, paid: 0 }; let got = 0, owe = 0, total = 0, sold = 0, soldM = 0;
@@ -230,6 +231,7 @@ function table(list, multi) {
   let rows = list.filter(b => F.st === "all" || (F.st === "booked" ? b.st !== "free" : F.st === "owe" ? b.st !== "free" && b.price > b.got : b.st === F.st));
   const val = b => ({ code: b.code, expo: names[b.e], org: b.org || "", tel: b.tel || "", st: STO[b.st], price: b.price, got: b.got, owe: b.st === "free" ? -1 : b.price - b.got, dl: b.st === "held" ? b.dl : 9e15 - (b.at || 0) })[F.sort];
   rows.sort((a, b) => { const x = val(a), y = val(b); return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "mn", { numeric: true })) * F.dir; });
+  LAST.rows = rows;
   const cols = COLS.filter(c => multi || c[0] !== "expo");
   $("#tTitle").textContent = (CHIPS.find(c => c[0] === F.st) || [, "Захиалгууд"])[1] + " · " + rows.length;
   const now = Date.now() - D.skew;
@@ -247,6 +249,46 @@ $("#tbl").onclick = e => {
   if (s) { if (F.sort === s.dataset.sort) F.dir = -F.dir; else { F.sort = s.dataset.sort; F.dir = ["price", "got", "owe"].includes(F.sort) ? -1 : 1; } saveF(); render(); return; }
   if (e.target.closest("a")) return;
   const tr = e.target.closest("tr[data-b]"); if (tr) location.href = "admin.html#e=" + tr.dataset.e + "&b=" + tr.dataset.b;
+};
+
+/* ---------- Excel татах: одоо харагдаж буй шүүлтүүрээр ---------- */
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, bad) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; sc.onload = ok; sc.onerror = () => bad(new Error("Excel бэлтгэх хэрэгсэл ачаалагдсангүй. Интернэтээ шалгаад дахин оролдоно уу.")); document.head.appendChild(sc); });
+}
+$("#xlsx").onclick = async () => {
+  if (!LAST || !LAST.rows) return;
+  const btn = $("#xlsx"); btn.disabled = true; btn.textContent = "Бэлтгэж байна…";
+  try {
+    await loadXlsx();
+    const names = {}, cats = {}; D.expos.forEach(e => { names[e.id] = e.name; }); D.cats.forEach(c => { cats[c.e + "|" + c.id] = c.name; });
+    const dt = t => { if (!t) return ""; const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + hhmm(t); };
+    const head = ["Үзэсгэлэн", "Лангуу", "Салбар", "м²", "Байгууллага", "Хариуцагч", "Утас", "Имэйл", "Төлөв", "Дүн ₮", "Төлсөн ₮", "Үлдэгдэл ₮", "Барьцаа дуусах", "Сүүлд өөрчилсөн", "Хэн"];
+    const rows = LAST.rows.map(b => [names[b.e], b.code, cats[b.e + "|" + b.cat] || "", b.m2 || "", b.org || "", b.person || "", b.tel || "", b.mail || "", ST[b.st], b.price, b.got, b.st === "free" ? 0 : b.price - b.got, b.st === "held" ? dt(b.dl) : "", dt(b.at), b.by || ""]);
+    const filt = "Шүүлтүүр: " + $("#fExpo").selectedOptions[0].text + " · " + (CHIPS.find(c => c[0] === F.st) || [, ""])[1] + (F.cat ? " · " + $("#fCat").selectedOptions[0].text : "") + (F.q ? " · \"" + F.q + "\"" : "");
+    const ws1 = XLSX.utils.aoa_to_sheet([head].concat(rows));
+    ws1["!cols"] = [22, 8, 18, 6, 26, 16, 11, 22, 18, 13, 13, 13, 17, 17, 18].map(w => ({ wch: w }));
+    ws1["!autofilter"] = { ref: "A1:O" + (rows.length + 1) };
+    for (let r = 1; r <= rows.length; r++) ["J", "K", "L"].forEach(c => { const cell = ws1[c + (r + 1)]; if (cell) cell.z = "#,##0"; });
+    // Дүн: үзэсгэлэн (нэгийг сонгосон бол салбар) тус бүрээр
+    const one = LAST.ex.length === 1, groups = one ? D.cats.filter(c => c.e === LAST.ex[0].id).map(c => [c.name, LAST.base.filter(b => b.cat === c.id)]) : LAST.ex.map(e => [e.name, LAST.base.filter(b => b.e === e.id)]);
+    const line = (n, l) => { const s = sums(l); return [n, s.cnt, s.n.paid, s.n.adv, s.n.held, s.n.free, s.cnt ? Math.round((s.n.adv + s.n.paid) / s.cnt * 100) / 100 : 0, s.got, s.owe, s.total]; };
+    const sum = [["Захиалгын тайлан — " + (window.EXPO_ORG || "")], [filt], ["Татсан: " + dt(Date.now())], [],
+      [one ? "Салбар" : "Үзэсгэлэн", "Нийт лангуу", "Бүрэн төлсөн", "Урьдчилгаа", "Түр барьсан", "Сул", "Зарагдсан %", "Орсон мөнгө ₮", "Авлага ₮", "Боломжит орлого ₮"]]
+      .concat(groups.filter(g => g[1].length).map(g => line(g[0], g[1])), [line("НИЙТ", LAST.base)]);
+    const ws2 = XLSX.utils.aoa_to_sheet(sum);
+    ws2["!cols"] = [26, 12, 12, 12, 12, 8, 12, 16, 16, 18].map(w => ({ wch: w }));
+    for (let r = 6; r <= sum.length; r++) { ["H", "I", "J"].forEach(c => { const x = ws2[c + r]; if (x) x.z = "#,##0"; }); const p = ws2["G" + r]; if (p) p.z = "0%"; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws2, "Дүн"); XLSX.utils.book_append_sheet(wb, ws1, "Захиалга");
+    // Файлын нэрийг латинаар: зарим хөтөч кирилл нэрийг "download" болгодог
+    const TR = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", ө: "u", п: "p", р: "r", с: "s", т: "t", у: "u", ү: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sh", ъ: "", ы: "i", ь: "", э: "e", ю: "yu", я: "ya" };
+    const lat = t => String(t).toLowerCase().split("").map(c => TR[c] !== undefined ? TR[c] : c).join("").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+    const nm = one ? lat(LAST.ex[0].name) : F.expo === "all" ? "bukh" : "neelttei";
+    XLSX.writeFile(wb, "tailan-" + (nm || "expo") + "-" + dt(Date.now()).slice(0, 10) + ".xlsx");
+    toast("Excel файл татагдлаа (" + rows.length + " мөр).");
+  } catch (e) { toast(e.message, 6000); }
+  finally { btn.disabled = false; btn.textContent = "📥 Excel татах"; }
 };
 
 load(); startTimer();

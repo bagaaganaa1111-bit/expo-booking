@@ -155,6 +155,23 @@ function slug_(v, selfId) {
   return s;
 }
 
+/** Нийтийн хуудасны хариуг 10 секунд кэшлэнэ: олон хүн зэрэг ороход серверийн ачааллыг бууруулна. */
+function cached_(key, fn) {
+  const c = CacheService.getScriptCache(), hit = c.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const v = fn(), str = JSON.stringify(v);
+  if (str.length < 90000) { try { c.put(key, str, 10); } catch (e) {} }
+  return v;
+}
+/** Өгөгдөл өөрчлөгдөхөд кэшийг цэвэрлэнэ. */
+function bump_(e) {
+  try {
+    const keys = ['pub_list'];
+    if (e) { keys.push('pub_e_' + String(e.id).toLowerCase()); if (e.slug) keys.push('pub_e_' + String(e.slug).toLowerCase()); }
+    CacheService.getScriptCache().removeAll(keys);
+  } catch (x) {}
+}
+
 function catsOf_(expoId) { return readAll_(SH.CAT).filter(c => String(c.expoId) === String(expoId)); }
 function boothsOf_(expoId) { return readAll_(SH.BOOTH).filter(b => String(b.expoId) === String(expoId)); }
 
@@ -176,6 +193,7 @@ function expireHolds_(expoFilter) {
     clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = 'систем';
     writeRow_(SH.BOOTH, b);
     log_(b.expoId, b.code, 'хугацаа дууссан', 'систем', '');
+    bump_({ id: b.expoId, slug: (readAll_(SH.EXPO).find(x => String(x.id) === String(b.expoId)) || {}).slug });
   });
   return freed;
 }
@@ -188,6 +206,9 @@ function clearBooking_(b) {
 
 /** Нүүр хуудас: нээлттэй болон удахгүй нээгдэх үзэсгэлэнгүүд. Хаагдсан, дууссан нь харагдахгүй. */
 function apiList_() {
+  return cached_('pub_list', () => apiListRaw_());
+}
+function apiListRaw_() {
   const today = iso_(new Date()), booths = readAll_(SH.BOOTH);
   const items = readAll_(SH.EXPO).filter(e => (e.status === 'open' || !e.status || e.status === 'draft') && !(iso_(e.end) && iso_(e.end) < today)).map(e => {
     const open = e.status === 'open', bs = open ? booths.filter(b => String(b.expoId) === String(e.id)) : [];
@@ -199,6 +220,10 @@ function apiList_() {
 }
 
 function apiExpo_(req) {
+  const key = 'pub_e_' + String(req.e || '').trim().toLowerCase();
+  return cached_(key, () => apiExpoRaw_(req));
+}
+function apiExpoRaw_(req) {
   const e = findExpo_(req.e);
   if (e.status !== 'open') fail_(e.status === 'closed' ? 'Энэ үзэсгэлэнгийн захиалга хаагдсан байна.' : 'Захиалга хараахан нээгдээгүй байна.');
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
@@ -240,6 +265,7 @@ function apiBook_(req) {
     Object.assign(b, { status: 'held', price, org, person, tel, mail, heldAt: new Date(), updatedAt: new Date(), updatedBy: 'оролцогч' });
     writeRow_(SH.BOOTH, b);
     log_(e.id, b.code, 'захиалсан', 'оролцогч', org + ' ' + tel);
+    bump_(e);
     return { e, b, price };
   });
   const adv = Math.round(res.price * res.e.advancePct / 100);
@@ -250,12 +276,23 @@ function apiBook_(req) {
 
 /* ===================== Ажилтны API ===================== */
 
+const PIN_MAX_FAILS = 10, PIN_LOCK_SEC = 900;
 function auth_(pin) {
   pin = str_(pin, 20);
   if (!pin) fail_('PIN кодоо оруулна уу.');
+  const cache = CacheService.getScriptCache();
+  if (cache.get('pin_lock')) fail_('PIN олон удаа буруу оруулсан тул нэвтрэлтийг 15 минут түр хаасан. Дараа дахин оролдоно уу.');
   const same = x => String(x.pin).trim() === pin || (/^\d+$/.test(pin) && /^\d+$/.test(String(x.pin).trim()) && Number(x.pin) === Number(pin));
   const s = readAll_(SH.STAFF).find(x => same(x) && String(x.active).toLowerCase() !== 'false' && String(x.active) !== 'үгүй');
-  if (!s) { Utilities.sleep(800); fail_('PIN код буруу байна.'); }
+  if (!s) {
+    Utilities.sleep(800);
+    const n = num_(cache.get('pin_fails')) + 1;
+    if (n >= PIN_MAX_FAILS) {
+      cache.put('pin_lock', '1', PIN_LOCK_SEC); cache.remove('pin_fails');
+      notify_('tech', '🔐 PIN ' + PIN_MAX_FAILS + ' удаа буруу оруулсан тул ажилтны нэвтрэлтийг 15 минут хаалаа. Хэн нэгэн таах оролдлого хийж байж магадгүй.');
+    } else cache.put('pin_fails', String(n), PIN_LOCK_SEC);
+    fail_('PIN код буруу байна.');
+  }
   return { name: String(s.name), role: role_(s.role) };
 }
 
@@ -288,6 +325,7 @@ function apiCreateExpo_(req, who) {
   const id = uid_();
   withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, place: str_(req.place, 120), start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
   log_(id, '', 'үзэсгэлэн үүсгэсэн', who.name, name);
+  bump_(null);
   return { id };
 }
 
@@ -317,6 +355,7 @@ function apiUpdateExpo_(req, who) {
       log_(e.id, '', 'төлөв: ' + req.status, who.name, '');
     }
     writeRow_(SH.EXPO, e);
+    bump_(e);
     return { expo: { id: e.id, status: e.status } };
   });
 }
@@ -473,6 +512,7 @@ function apiSaveBooths_(req, who) {
     replaceExpoRows_(SH.CAT, e.id, cats);
     replaceExpoRows_(SH.BOOTH, e.id, out.map(o => { const c = Object.assign({}, o); delete c._row; return c; }));
     log_(e.id, '', 'талбай хадгалсан', who.name, out.length + ' лангуу');
+    bump_(e);
     return { saved: out.length };
   });
 }
@@ -503,6 +543,7 @@ function apiSetStatus_(req, who) {
     log_(e.id, b.code, { held: 'түр барьсан', adv: 'урьдчилгаа орсон', paid: 'бүрэн төлсөн' }[st], who.name, b.org);
     return { e, b, prev };
   });
+  bump_(r.e);
   if (!r.same) {
     const t = { free: '⬜ Цуцлагдсан', held: '🟨 Утсаар захиалга', adv: '🟧 Урьдчилгаа орсон', paid: '🟥 Бүрэн төлсөн' }[st];
     notify_('ops', t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')');
@@ -574,6 +615,9 @@ function reportError_(where, err) {
 
 /** Цаг тутам: хугацаа дууссан түр захиалгыг суллана. */
 function hourlyJob() {
+  try { hourlyJobRaw_(); } catch (e) { reportError_('цаг тутмын шалгалт', e); }
+}
+function hourlyJobRaw_() {
   const freed = withLock_(() => expireHolds_());
   if (!freed.length) return;
   const names = {}; readAll_(SH.EXPO).forEach(e => { names[e.id] = e.name; });
@@ -582,6 +626,9 @@ function hourlyJob() {
 
 /** Өдөр бүр: нээлттэй үзэсгэлэн бүрийн товч тайлан. */
 function dailyReport() {
+  try { dailyReportRaw_(); } catch (e) { reportError_('өглөөний тайлан', e); }
+}
+function dailyReportRaw_() {
   const expos = readAll_(SH.EXPO).filter(e => e.status === 'open');
   if (!expos.length) return;
   const now = Date.now(), lines = [];
@@ -607,7 +654,19 @@ function dailyReport() {
 /* ===================== Анхны тохиргоо ===================== */
 
 function setup() {
-  Object.keys(COLS).forEach(sheet_);
+  Object.keys(COLS).forEach(name => {
+    const sh = sheet_(name);
+    // Багана нэмэгдсэн бол гарчгийн мөрийг шинэчилнэ (шинэ багана үргэлж төгсгөлд нэмэгддэг)
+    sh.getRange(1, 1, 1, COLS[name].length).setValues([COLS[name]]).setFontWeight('bold');
+    // Хүснэгтийг гараар засахаас хамгаална: зөвхөн эзэмшигч засна, систем хэвийн бичнэ
+    try {
+      const old = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+      const p = old.length ? old[0] : sh.protect();
+      p.setDescription('Систем ашигладаг хүснэгт — ажилтны хуудаснаас өөрчилнө үү');
+      p.removeEditors(p.getEditors());
+      if (p.canDomainEdit()) p.setDomainEdit(false);
+    } catch (e) { console.log(name + ' хамгаалалт тохируулж чадсангүй: ' + e.message); }
+  });
   const def = ss_().getSheetByName('Sheet1') || ss_().getSheetByName('Хуудас1');
   if (def && ss_().getSheets().length > 1 && def.getLastRow() === 0) ss_().deleteSheet(def);
   folder_();

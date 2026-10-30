@@ -160,7 +160,7 @@ function info() {
 }
 
 load(true);
-setInterval(() => { if (EID && !document.hidden && D && !busy) load(false); }, 30000);
+setInterval(() => { if (EID && !document.hidden && D && !busy) load(false); }, 60000);
 document.addEventListener("visibilitychange", () => { if (EID && !document.hidden && D && !busy) load(false); });
 </script>
 </body>

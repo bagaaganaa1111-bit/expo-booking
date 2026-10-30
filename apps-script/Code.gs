@@ -172,6 +172,15 @@ function bump_(e) {
   } catch (x) {}
 }
 
+/** Талбайн зураг (лангууны байршил, дугаар, м², салбар, үнэ)-ийн хувилбарын тэмдэг. Захиалгын төлөв орохгүй. */
+function layoutVer_(cats, booths) {
+  const parts = cats.map(c => [c.catId, c.name, c.color, num_(c.price)].join('|')).sort()
+    .concat(booths.map(b => [b.boothId, b.code, num_(b.x).toFixed(2), num_(b.y).toFixed(2), num_(b.w).toFixed(2), num_(b.h).toFixed(2), num_(b.m2), b.catId].join('|')).sort());
+  let h = 5381; const s = parts.join('#');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + '-' + booths.length;
+}
+
 function catsOf_(expoId) { return readAll_(SH.CAT).filter(c => String(c.expoId) === String(expoId)); }
 function boothsOf_(expoId) { return readAll_(SH.BOOTH).filter(b => String(b.expoId) === String(expoId)); }
 
@@ -372,7 +381,7 @@ function apiStaffExpo_(req) {
       price: priceOf_(b, cats), org: b.org, person: b.person, tel: String(b.tel || ''), mail: b.mail,
       heldAt: b.heldAt instanceof Date ? b.heldAt.getTime() : (Date.parse(b.heldAt) || null), updatedBy: b.updatedBy
     })),
-    now: Date.now()
+    now: Date.now(), layoutVer: layoutVer_(cats, boothsOf_(e.id))
   };
 }
 
@@ -485,6 +494,11 @@ function apiSaveBooths_(req, who) {
     cur.forEach(b => { byId[b.boothId] = b; });
     const curCats = catsOf_(e.id).map(c => { const o = Object.assign({}, c); delete o._row; return o; });
     // Менежер салбар, үнийг өөрчлөх эрхгүй: серверт байгааг нь хэвээр үлдээнэ
+    if (req.baseVer && String(req.baseVer) !== layoutVer_(curCats, cur)) {
+      const last = readAll_(SH.LOG).filter(l => String(l.expoId) === String(e.id) && /талбай хадгалсан|автоматаар таньсан|зураг оруулсан/.test(l.action)).pop();
+      const who2 = last ? last.by + (last.time instanceof Date ? ' (' + Utilities.formatDate(last.time, Session.getScriptTimeZone(), 'HH:mm') + ')' : '') : 'Өөр хүн';
+      fail_('CONFLICT: Энэ хооронд ' + who2 + ' талбайн зургийг хадгалсан байна. Таны өөрчлөлт хадгалагдсангүй.');
+    }
     const cats = !isBoss_(who) && curCats.length ? curCats
       : inC.map((c, i) => ({ expoId: e.id, catId: str_(c.id, 20) || ('c' + i), name: str_(c.name, 60) || ('Салбар ' + (i + 1)), color: str_(c.color, 9) || PALETTE[i % PALETTE.length], price: isBoss_(who) ? Math.max(0, num_(c.price)) : 0 }));
     if (!cats.length) fail_('Дор хаяж нэг салбар байх ёстой.');

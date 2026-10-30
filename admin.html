@@ -204,7 +204,7 @@ async function openExpo(id, quiet) {
   try {
     const r = await call("staffExpo", { id });
     if (quiet && (dirty || drag)) return;
-    EXPO = r.expo; CATS = r.cats; BOOTHS = r.booths; SKEW = Date.now() - r.now;
+    EXPO = r.expo; CATS = r.cats; BOOTHS = r.booths; SKEW = Date.now() - r.now; LAYOUT_VER = r.layoutVer || "";
     if (sel && !byId(sel)) sel = null;
     if (EXPO.imageId) { try { imgData = await loadImage(EXPO.imageId); } catch (e) { toast(e.message); } }
     const refit = !quiet || !FITTED;
@@ -212,7 +212,7 @@ async function openExpo(id, quiet) {
     render();
   } catch (e) { if (!quiet) { $("#eName").textContent = "Нээж чадсангүй"; $("#eMeta").textContent = e.message; } }
 }
-let SKEW = 0, FITTED = false;
+let SKEW = 0, FITTED = false, LAYOUT_VER = "";
 function render() {
   $("#eName").textContent = EXPO.name;
   $("#eMeta").textContent = [[EXPO.start, EXPO.end].filter(Boolean).join(" – "), { draft: "Бэлтгэл шат", open: "Захиалга нээлттэй", closed: "Захиалга хаагдсан" }[EXPO.status]].filter(Boolean).join(" · ");
@@ -391,13 +391,23 @@ async function setStatus(b, status, extra) {
 async function save() {
   const btn = $("#saveBtn"); btn.disabled = true; btn.textContent = "Хадгалж байна…";
   try {
-    await call("saveBooths", { id: EXPO.id, cats: CATS, booths: BOOTHS.map(b => ({ id: b.id, code: b.code, x: b.x, y: b.y, w: b.w, h: b.h, m2: b.m2, cat: b.cat })) }, { timeout: 60000 });
+    await call("saveBooths", { id: EXPO.id, baseVer: LAYOUT_VER, cats: CATS, booths: BOOTHS.map(b => ({ id: b.id, code: b.code, x: b.x, y: b.y, w: b.w, h: b.h, m2: b.m2, cat: b.cat })) }, { timeout: 60000 });
     setDirty(false); hist = []; toast("Хадгалагдлаа."); await openExpo(EXPO.id, true); return true;
-  } catch (e) { toast(e.message, 6000); return false; }
+  } catch (e) {
+    if (/^CONFLICT: /.test(e.message)) showConflict(e.message.slice(10)); else toast(e.message, 6000);
+    return false;
+  }
   finally { btn.disabled = false; btn.textContent = "Хадгалах"; }
 }
 $("#saveBtn").onclick = save;
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+function showConflict(msg) {
+  const n = $("#eNote"); n.hidden = false;
+  n.innerHTML = '<b>⚠️ ' + esc(msg) + '</b><br><span class="hint">Шинэ хувилбарыг ачаалаад өөрийн өөрчлөлтөө дахин хийнэ үү.</span><div class="row" style="margin-top:8px"><button class="btn pri sm" id="cfReload">Шинэ хувилбарыг ачаалах</button></div>';
+  n.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("#cfReload").onclick = () => { setDirty(false); hist = []; sel = null; openExpo(EXPO.id, true); };
+}
 
 /* ---------- Салбар ---------- */
 function cats() {

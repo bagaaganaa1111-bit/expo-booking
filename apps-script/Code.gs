@@ -18,7 +18,7 @@
 
 const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх' };
 const COLS = {
-  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about'],
+  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about', 'posterId'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
   'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy'],
   'Ажилтан': ['name', 'pin', 'role', 'active'],
@@ -52,7 +52,7 @@ const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook
 const STAFF = {
   login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
-  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_
+  saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_, poster: apiPoster_
 };
 
 function handle_(req) {
@@ -234,7 +234,7 @@ function apiListRaw_() {
   const today = iso_(new Date()), booths = readAll_(SH.BOOTH);
   const items = readAll_(SH.EXPO).filter(e => (e.status === 'open' || !e.status || e.status === 'draft') && !(iso_(e.end) && iso_(e.end) < today)).map(e => {
     const open = e.status === 'open', bs = open ? booths.filter(b => String(b.expoId) === String(e.id)) : [];
-    return { key: String(e.slug || e.id), name: String(e.name), start: iso_(e.start), end: iso_(e.end), place: String(e.place || ''), about: String(e.about || ''), open,
+    return { key: String(e.slug || e.id), name: String(e.name), start: iso_(e.start), end: iso_(e.end), place: String(e.place || ''), about: String(e.about || ''), poster: String(e.posterId || ''), open,
       total: bs.length, free: bs.filter(b => !BOOKED[b.status]).length };
   });
   items.sort((a, b) => (b.open - a.open) || String(a.start || '9').localeCompare(String(b.start || '9')));
@@ -263,7 +263,7 @@ function apiExpoRaw_(req) {
 
 function apiImage_(req) {
   const id = str_(req.id, 100);
-  if (!id || !readAll_(SH.EXPO).some(e => String(e.imageId) === id)) fail_('Зураг олдсонгүй.');
+  if (!id || !readAll_(SH.EXPO).some(e => String(e.imageId) === id || String(e.posterId) === id)) fail_('Зураг олдсонгүй.');
   const blob = DriveApp.getFileById(id).getBlob();
   return { data: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
 }
@@ -387,7 +387,7 @@ function apiStaffExpo_(req) {
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
   const cats = catsOf_(e.id);
   return {
-    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), place: String(e.place || ''), about: String(e.about || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
+    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), place: String(e.place || ''), about: String(e.about || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || ''), posterId: String(e.posterId || '') },
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId, status: b.status || 'free',
@@ -422,6 +422,28 @@ function apiUploadImage_(req, who) {
     if (old) { try { DriveApp.getFileById(old).setTrashed(true); } catch (x) {} }
     log_(e.id, '', 'зураг оруулсан', who.name, '');
     return { imageId: e.imageId };
+  });
+}
+
+/** Үзэсгэлэнгийн постер (нүүр хуудсанд харагдана). data хоосон бол устгана. Зөвхөн захирал. */
+function apiPoster_(req, who) {
+  needBoss_(who);
+  let bytes = null, m = null;
+  if (req.data) {
+    m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(String(req.data));
+    if (!m) fail_('Зураг буруу байна. JPG эсвэл PNG зураг оруулна уу.');
+    bytes = Utilities.base64Decode(m[3]);
+    if (bytes.length > 1.5 * 1024 * 1024) fail_('Зураг хэт том байна.');
+  }
+  return withLock_(() => {
+    const e = findExpo_(req.id), old = String(e.posterId || '');
+    e.posterId = bytes ? folder_().createFile(Utilities.newBlob(bytes, m[1], 'poster-' + e.id + '-' + Date.now() + '.' + (m[2] === 'jpeg' ? 'jpg' : m[2]))).getId() : '';
+    sheet_(SH.EXPO).getRange(1, 1, 1, COLS[SH.EXPO].length).setValues([COLS[SH.EXPO]]); // шинэ баганын гарчиг
+    writeRow_(SH.EXPO, e);
+    if (old) { try { DriveApp.getFileById(old).setTrashed(true); } catch (x) {} }
+    log_(e.id, '', bytes ? 'постер оруулсан' : 'постер устгасан', who.name, '');
+    bump_(e);
+    return { posterId: e.posterId };
   });
 }
 

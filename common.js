@@ -39,6 +39,41 @@ async function loadImage(id) {
   return r.data;
 }
 
+/** Постер зургийг авчирна. Төхөөрөмж дээр хадгална; одоо харагдахгүй болсон постеруудыг цэвэрлэнэ. */
+async function loadPoster(id, keep) {
+  const k = "expo-poster-" + id;
+  try { const c = localStorage.getItem(k); if (c) return c; } catch (e) {}
+  const r = await api("image", { id }, { timeout: 45000 });
+  try {
+    if (keep) for (let i = localStorage.length - 1; i >= 0; i--) { const key = localStorage.key(i); if (key && key.indexOf("expo-poster-") === 0 && keep.indexOf(key.slice(12)) < 0) localStorage.removeItem(key); }
+    localStorage.setItem(k, r.data);
+  } catch (e) {}
+  return r.data;
+}
+
+/** Зургийг төхөөрөмж дээр жижигрүүлж JPEG болгоно (илгээхэд хурдан, хадгалахад бага). */
+function shrinkImage(file, maxSide, quality) {
+  return new Promise((ok, bad) => {
+    if (!/^image\//.test(file.type)) return bad(new Error("JPG эсвэл PNG зураг сонгоно уу."));
+    const rd = new FileReader();
+    rd.onerror = () => bad(new Error("Зургийг уншиж чадсангүй."));
+    rd.onload = () => {
+      const im = new Image();
+      im.onerror = () => bad(new Error("Зургийг нээж чадсангүй. Өөр зураг сонгоно уу."));
+      im.onload = () => {
+        const k = Math.min(1, maxSide / Math.max(im.width, im.height)), c = document.createElement("canvas");
+        c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+        const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+        let q = quality, d = c.toDataURL("image/jpeg", q);
+        while (d.length > 400000 && q > 0.5) { q -= 0.1; d = c.toDataURL("image/jpeg", q); }
+        ok({ data: d, w: c.width, h: c.height });
+      };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
 
 function pillHtml(st, pub) {

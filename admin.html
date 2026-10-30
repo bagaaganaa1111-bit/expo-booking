@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Лангуу удирдлага</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <div class="wrap">
@@ -132,6 +132,14 @@
         <label class="f" style="grid-column:1/-1">Төлбөр төлөх данс (оролцогч захиалсны дараа харна)<input id="sPay" type="text" placeholder="Хаан банк 5012345678, Идэр дөрвөн улирал ХХК"></label>
         <div class="row" style="align-self:end"><button class="btn" type="submit">Тохиргоо хадгалах</button></div>
       </form>
+      <div class="row" style="margin-top:16px;align-items:flex-start;gap:14px;border-top:1px solid var(--line);padding-top:14px">
+        <div id="posterBox" style="width:110px;aspect-ratio:3/4;border:1px dashed var(--line);border-radius:8px;background:var(--bg);display:grid;place-items:center;overflow:hidden;font-size:12px;color:var(--muted);text-align:center">Постер алга</div>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:180px">
+          <b style="font-size:14px">Постер зураг</b>
+          <p class="hint">Нүүр хуудсанд үзэсгэлэнгийн тайлбарын хажууд харагдана. Босоо зураг хамгийн тохиромжтой.</p>
+          <div class="row"><label class="btn sm" for="posterFile" id="posterPick">Постер оруулах</label><input id="posterFile" type="file" accept="image/*" hidden><button class="btn sm warn" type="button" id="posterDel" hidden>Устгах</button></div>
+        </div>
+      </div>
     </details>
   </section>
 
@@ -140,7 +148,7 @@
 <div id="toast" hidden></div>
 
 <script src="config.js"></script>
-<script src="common.js"></script>
+<script src="common.js?v=3"></script>
 <script>
 let PIN = store("expo-pin") || "", USER = null, EXPO = null, CATS = [], BOOTHS = [], hist = [], dirty = false;
 let sel = null, adding = false, drag = null, zoom = 100, cancelArm = null, phoneForm = false, pollT = null, imgData = null;
@@ -238,6 +246,7 @@ function render() {
   else if (EXPO.status === "open") { note.hidden = false; note.innerHTML = "Захиалга нээлттэй. Оролцогчдод илгээх холбоос: <b style=\"word-break:break-all\">" + esc(pubLink()) + "</b>"; }
   else note.hidden = true;
   $("#sName").value = EXPO.name; $("#sSlug").value = EXPO.slug || ""; $("#sPlace").value = EXPO.place || ""; $("#sAbout").value = EXPO.about || ""; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
+  showPosterBox();
   $("#cSettings").hidden = !BOSS(); $("#addCat").parentElement.hidden = !BOSS();
   renderPlan(); info(); cats(); stats(); list();
   $("#planHint").textContent = adding ? "Зураг дээр хуруугаараа чирж шинэ лангууны хүрээг зурна." : "Лангуу дээр дарж сонгоно. Сонгосон лангууг чирж зөөнө, баруун доод булангийн дугуйг чирж хэмжээг тааруулна.";
@@ -253,6 +262,32 @@ $("#setForm").onsubmit = async e => {
   e.preventDefault();
   try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), place: $("#sPlace").value, about: $("#sAbout").value, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value }); toast("Тохиргоо хадгалагдлаа."); openExpo(EXPO.id, true); }
   catch (err) { toast(err.message); }
+};
+
+/* ---------- Постер ---------- */
+async function showPosterBox() {
+  const box = $("#posterBox"), id = EXPO.posterId;
+  $("#posterPick").textContent = id ? "Солих" : "Постер оруулах"; $("#posterDel").hidden = !id;
+  if (!id) { box.textContent = "Постер алга"; return; }
+  box.innerHTML = '<span class="spin"></span>';
+  try { const src = await loadPoster(id); if (EXPO.posterId === id) box.innerHTML = '<img alt="Постер" src="' + src + '" style="width:100%;height:100%;object-fit:cover">'; }
+  catch (e) { box.textContent = "Ачаалж чадсангүй"; }
+}
+$("#posterFile").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+  busy("Постер илгээж байна…");
+  try { const img = await shrinkImage(f, 1200, 0.82); const r = await call("poster", { id: EXPO.id, data: img.data }, { timeout: 90000 }); EXPO.posterId = r.posterId; showPosterBox(); toast("Постер хадгалагдлаа. Нүүр хуудсанд харагдана."); }
+  catch (err) { toast(err.message, 6000); }
+  finally { busy(""); }
+};
+$("#posterDel").onclick = async () => {
+  const b = $("#posterDel");
+  if (!b.dataset.arm) { b.dataset.arm = 1; b.textContent = "Дахин дарж батална"; setTimeout(() => { delete b.dataset.arm; b.textContent = "Устгах"; }, 4000); return; }
+  delete b.dataset.arm; b.textContent = "Устгах";
+  busy("Постер устгаж байна…");
+  try { await call("poster", { id: EXPO.id, data: "" }); EXPO.posterId = ""; showPosterBox(); toast("Постер устгагдлаа."); }
+  catch (err) { toast(err.message, 6000); }
+  finally { busy(""); }
 };
 
 /* ---------- Зураг оруулах, таниулах ---------- */

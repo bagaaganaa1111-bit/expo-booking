@@ -109,3 +109,16 @@ td.mono{font-family:var(--mono)}
 .dirty{color:var(--held);font-size:13px;font-weight:500}
 
 @media (max-width:600px){.chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}.chips button{flex:none}}
+
+/* Нүүр хуудасны үзэсгэлэнгийн карт: постер баруун талд (утсан дээр дээд талд) */
+.expo-card{flex-direction:row;align-items:flex-start;gap:20px}
+.expo-body{display:flex;flex-direction:column;gap:12px;flex:1;min-width:0}
+.expo-card .poster{order:2;flex:0 0 240px;aspect-ratio:3/4;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:0;overflow:hidden;cursor:zoom-in;display:grid;place-items:center}
+.expo-card .poster img{width:100%;height:100%;object-fit:cover;display:block}
+@media (max-width:640px){
+  .expo-card{flex-direction:column;gap:14px}
+  .expo-card .poster{order:0;flex:none;width:100%;aspect-ratio:auto;min-height:180px;max-height:70vh}
+  .expo-card .poster img{height:auto;max-height:70vh;object-fit:contain}
+}
+.lightbox{position:fixed;inset:0;z-index:50;background:rgba(10,12,18,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;cursor:zoom-out}
+.lightbox img{max-width:100%;max-height:calc(100vh - 90px);object-fit:contain;border-radius:8px}

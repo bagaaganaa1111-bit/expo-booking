@@ -1,0 +1,15 @@
+# Үзэсгэлэнгийн Telegram зуучлагч. FWM-ээс тусдаа: /opt/expo-relay
+services:
+  relay:
+    image: node:22-alpine
+    container_name: expo-relay
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./relay.mjs:/app/relay.mjs:ro
+    env_file: .env
+    command: ["node", "relay.mjs"]
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

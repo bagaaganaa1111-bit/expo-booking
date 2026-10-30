@@ -18,7 +18,7 @@
 
 const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх' };
 const COLS = {
-  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo'],
+  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
   'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy'],
   'Ажилтан': ['name', 'pin', 'role', 'active'],
@@ -138,11 +138,21 @@ function fmt_(n) { return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))
 /* ===================== Үнэ, төлөв ===================== */
 
 function findExpo_(id) {
-  const e = readAll_(SH.EXPO).find(x => String(x.id) === String(id));
+  const key = String(id || '').trim().toLowerCase();
+  const all = readAll_(SH.EXPO), e = all.find(x => String(x.id) === key) || all.find(x => String(x.slug || '').toLowerCase() === key);
   if (!e) fail_('Үзэсгэлэн олдсонгүй. Холбоосоо шалгана уу.');
   e.holdHours = num_(e.holdHours, 48) || 48;
   e.advancePct = num_(e.advancePct, 50) || 50;
   return e;
+}
+
+/** Холбоосын богино нэрийг шалгана: латин жижиг үсэг, тоо, зураас; давхардахгүй. Хоосон бол ''. */
+function slug_(v, selfId) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(s)) fail_('Холбоосын нэр 3–40 тэмдэгт, латин жижиг үсэг, тоо, зураасаас бүрдэнэ. Жишээ: tsagaansar2027');
+  if (readAll_(SH.EXPO).some(x => String(x.id) !== String(selfId) && (String(x.slug || '').toLowerCase() === s || String(x.id) === s))) fail_('"' + s + '" нэрийг өөр үзэсгэлэн ашиглаж байна. Өөр нэр сонгоно уу.');
+  return s;
 }
 
 function catsOf_(expoId) { return readAll_(SH.CAT).filter(c => String(c.expoId) === String(expoId)); }
@@ -255,7 +265,7 @@ function apiExpos_() {
   return {
     expos: readAll_(SH.EXPO).map(e => {
       const bs = booths.filter(b => String(b.expoId) === String(e.id));
-      return { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), status: e.status || 'draft', booths: bs.length, booked: bs.filter(b => BOOKED[b.status]).length, hasImage: !!e.imageId };
+      return { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), status: e.status || 'draft', slug: String(e.slug || ''), booths: bs.length, booked: bs.filter(b => BOOKED[b.status]).length, hasImage: !!e.imageId };
     }).reverse()
   };
 }
@@ -264,7 +274,7 @@ function apiCreateExpo_(req, who) {
   const name = str_(req.name, 120);
   if (!name) fail_('Үзэсгэлэнгийн нэрийг оруулна уу.');
   const id = uid_();
-  withLock_(() => appendRows_(SH.EXPO, [{ id, name, start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]));
+  withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
   log_(id, '', 'үзэсгэлэн үүсгэсэн', who.name, name);
   return { id };
 }
@@ -277,6 +287,7 @@ function apiUpdateExpo_(req, who) {
     if (req.start !== undefined) e.start = str_(req.start, 20);
     if (req.end !== undefined) e.end = str_(req.end, 20);
     if (req.holdHours !== undefined) e.holdHours = Math.max(1, Math.min(240, num_(req.holdHours, 48)));
+    if (req.slug !== undefined) e.slug = slug_(req.slug, e.id);
     if (req.payInfo !== undefined) e.payInfo = str_(req.payInfo, 200);
     if (req.advancePct !== undefined) e.advancePct = Math.max(0, Math.min(100, num_(req.advancePct, 50)));
     if (req.status !== undefined) {
@@ -301,7 +312,7 @@ function apiStaffExpo_(req) {
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
   const cats = catsOf_(e.id);
   return {
-    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
+    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || '') },
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId, status: b.status || 'free',

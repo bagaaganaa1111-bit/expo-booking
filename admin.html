@@ -33,6 +33,7 @@
         <label class="f">Нэр *<input id="nName" type="text" placeholder="Цагаан сар 2027"></label>
         <label class="f">Эхлэх өдөр<input id="nStart" type="date"></label>
         <label class="f">Дуусах өдөр<input id="nEnd" type="date"></label>
+        <label class="f">Холбоосын нэр (латин)<input id="nSlug" type="text" autocapitalize="off" spellcheck="false" placeholder="tsagaansar2027"></label>
       </div>
       <span class="err" id="newErr"></span>
       <div><button class="btn pri" type="submit" id="newBtn">Үүсгэх</button></div>
@@ -121,6 +122,7 @@
       <summary style="cursor:pointer;font-weight:600">Үзэсгэлэнгийн тохиргоо</summary>
       <form id="setForm" class="grid" style="margin-top:12px" novalidate>
         <label class="f">Нэр<input id="sName" type="text"></label>
+        <label class="f">Холбоосын нэр (латин)<input id="sSlug" type="text" autocapitalize="off" spellcheck="false" placeholder="tsagaansar2027"></label>
         <label class="f">Эхлэх өдөр<input id="sStart" type="date"></label>
         <label class="f">Дуусах өдөр<input id="sEnd" type="date"></label>
         <label class="f">Түр барих хугацаа, цаг<input id="sHold" type="number" min="1" max="240" inputmode="numeric"></label>
@@ -189,7 +191,7 @@ $("#newForm").onsubmit = async e => {
   e.preventDefault(); const name = $("#nName").value.trim(); $("#newErr").textContent = "";
   if (!name) { $("#newErr").textContent = "Үзэсгэлэнгийн нэрийг оруулна уу."; return; }
   $("#newBtn").disabled = true;
-  try { const r = await call("createExpo", { name, start: $("#nStart").value, end: $("#nEnd").value }); $("#newForm").reset(); location.hash = "e=" + r.id; }
+  try { const r = await call("createExpo", { name, slug: $("#nSlug").value.trim(), start: $("#nStart").value, end: $("#nEnd").value }); slugTouched = false; $("#newForm").reset(); location.hash = "e=" + r.id; }
   catch (err) { $("#newErr").textContent = err.message; }
   finally { $("#newBtn").disabled = false; }
 };
@@ -233,12 +235,12 @@ function render() {
   else if (EXPO.status !== "open" && hasB) { note.hidden = false; note.textContent = "Лангуу, үнийг шалгаж \"Хадгалах\" дарсны дараа \"Захиалга нээх\" товчоор оролцогчдод нээнэ." + (EXPO.payInfo ? "" : " Доорх тохиргоонд төлбөрийн дансаа оруулахаа мартуузай."); }
   else if (EXPO.status === "open") { note.hidden = false; note.innerHTML = "Захиалга нээлттэй. Оролцогчдод илгээх холбоос: <b style=\"word-break:break-all\">" + esc(pubLink()) + "</b>"; }
   else note.hidden = true;
-  $("#sName").value = EXPO.name; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
+  $("#sName").value = EXPO.name; $("#sSlug").value = EXPO.slug || ""; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
   $("#cSettings").hidden = !BOSS(); $("#addCat").parentElement.hidden = !BOSS();
   renderPlan(); info(); cats(); stats(); list();
   $("#planHint").textContent = adding ? "Зураг дээр хуруугаараа чирж шинэ лангууны хүрээг зурна." : "Лангуу дээр дарж сонгоно. Сонгосон лангууг чирж зөөнө, баруун доод булангийн дугуйг чирж хэмжээг тааруулна.";
 }
-function pubLink() { return location.href.replace(/admin\.html.*$/, "").replace(/#.*$/, "").replace(/\/?$/, "/") + "?e=" + EXPO.id; }
+function pubLink() { return location.href.replace(/admin\.html.*$/, "").replace(/#.*$/, "").replace(/\/?$/, "/") + "?e=" + (EXPO.slug || EXPO.id); }
 async function copyLink() { const u = pubLink(); try { await navigator.clipboard.writeText(u); toast("Холбоос хуулагдлаа. Оролцогчдод илгээнэ үү."); } catch (e) { toast("Холбоосыг дээрх хэсгээс сонгож хуулна уу."); } }
 async function setExpoStatus(status) {
   if (dirty) { if (!(await save())) return; }
@@ -247,7 +249,7 @@ async function setExpoStatus(status) {
 }
 $("#setForm").onsubmit = async e => {
   e.preventDefault();
-  try { await call("updateExpo", { id: EXPO.id, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value }); toast("Тохиргоо хадгалагдлаа."); openExpo(EXPO.id, true); }
+  try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value }); toast("Тохиргоо хадгалагдлаа."); openExpo(EXPO.id, true); }
   catch (err) { toast(err.message); }
 };
 
@@ -427,6 +429,14 @@ function list() {
 }
 $("#filter").onchange = list;
 $("#list").addEventListener("click", e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; sel = tr.dataset.id; cancelArm = null; phoneForm = false; renderPlan(); info(); list(); const el = $('.bt[data-id="' + sel + '"]'); if (el) el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); });
+
+/* ---------- Холбоосын нэр: монгол нэрээс латин үсгээр санал болгоно ---------- */
+const TR = { а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"yo",ж:"j",з:"z",и:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",ө:"u",п:"p",р:"r",с:"s",т:"t",у:"u",ү:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sh",ъ:"",ы:"i",ь:"",э:"e",ю:"yu",я:"ya" };
+const toSlug = s => s.toLowerCase().split("").map(c => TR[c] !== undefined ? TR[c] : c).join("").replace(/[^a-z0-9]+/g, "").slice(0, 40);
+let slugTouched = false;
+$("#nName").addEventListener("input", () => { if (!slugTouched) $("#nSlug").value = toSlug($("#nName").value); });
+$("#nSlug").addEventListener("input", () => { slugTouched = !!$("#nSlug").value; $("#nSlug").value = $("#nSlug").value.toLowerCase().replace(/[^a-z0-9-]/g, ""); });
+$("#sSlug").addEventListener("input", () => { $("#sSlug").value = $("#sSlug").value.toLowerCase().replace(/[^a-z0-9-]/g, ""); });
 
 /* ---------- Ажилтан ---------- */
 let STAFF_LIST = [], sfRow = 0;

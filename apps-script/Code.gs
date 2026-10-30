@@ -139,6 +139,8 @@ function prop_(k) {
   if (!PROPS_) { try { PROPS_ = PropertiesService.getScriptProperties().getProperties() || {}; } catch (e) { PROPS_ = {}; } }
   return PROPS_[k] || '';
 }
+/** Тохиргоонд олон ID таслалаар бичиж болно: "-5355907630, 6317987258" */
+function ids_(k) { return prop_(k).split(/[,\s]+/).map(x => x.trim()).filter(Boolean); }
 function setProp_(k, v) { PropertiesService.getScriptProperties().setProperty(k, v); if (PROPS_) PROPS_[k] = v; }
 function uid_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 10); }
 function num_(v, d) { const n = Number(v); return isFinite(n) ? n : (d || 0); }
@@ -627,8 +629,8 @@ function apiStaffSave_(req, who) {
 function notify_(kind, text, opt) {
   if (!prop_('TELEGRAM_TOKEN')) return;
   opt = opt || {};
-  const g = prop_('TELEGRAM_CHAT'), d = prop_('TELEGRAM_DIRECTOR'), a = prop_('TELEGRAM_ADMIN');
-  const to = kind === 'ops' ? [g, d] : kind === 'report' ? [d || a] : kind === 'tech' ? [a || d] : [g, d, a];
+  const g = ids_('TELEGRAM_CHAT'), d = ids_('TELEGRAM_DIRECTOR'), a = ids_('TELEGRAM_ADMIN');
+  const to = kind === 'ops' ? g.concat(d) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? (a.length ? a : d) : g.concat(d, a);
   to.filter((c, i) => c && to.indexOf(c) === i && String(c) !== String(opt.skip || '')).forEach(chat => {
     tgSend_(chat, text, opt.buttons && opt.buttons.length ? { inline_keyboard: opt.buttons } : null);
   });
@@ -788,8 +790,9 @@ function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScri
 function tgWho_(chatId, from) {
   const id = String(chatId || '');
   if (!id) return null;
-  const boss = [prop_('TELEGRAM_DIRECTOR'), prop_('TELEGRAM_ADMIN')].filter(Boolean).map(String).indexOf(id) >= 0;
-  const staff = !boss && prop_('TELEGRAM_CHAT') && String(prop_('TELEGRAM_CHAT')) === id;
+  // TELEGRAM_USERS: мэдэгдэл авахгүй ч ботод хувиараа бичиж цэс, товч ашиглах захирлууд
+  const boss = ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_USERS')).indexOf(id) >= 0;
+  const staff = !boss && ids_('TELEGRAM_CHAT').indexOf(id) >= 0;
   if (!boss && !staff) return null;
   const name = [from && from.first_name, from && from.last_name].filter(Boolean).join(' ') || 'Telegram';
   return { name: name + ' (Telegram)', short: name, role: boss ? 'admin' : 'staff', chat: id };
@@ -1007,7 +1010,7 @@ function tgConnect() {
     { command: 'soon', description: '24 цагт суллагдах лангуу' },
     { command: 'find', description: 'Утас, нэрээр хайх' }
   ] });
-  [prop_('TELEGRAM_DIRECTOR'), prop_('TELEGRAM_ADMIN'), prop_('TELEGRAM_CHAT')].filter((c, i, a) => c && a.indexOf(c) === i).forEach(chat => {
+  ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
     const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
     console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
   });
@@ -1051,4 +1054,12 @@ function apiRelayPair_(req) {
   c.remove('relay_code'); c.remove('relay_fails');
   notify_('tech', '🔗 VPS зуучлагч холбогдлоо.');
   return { token: prop_('TELEGRAM_TOKEN'), key: prop_('TG_SECRET') };
+}
+
+/** Цэсийг бүх зөвшөөрөгдсөн чат руу илгээнэ (webhook-д хүрэхгүй, зуучлагчтай үед ашиглана). */
+function tgSendMenu() {
+  ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
+    const s = tgSend_(chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу. Цэсийг дахин нээх бол /menu гэж бичнэ.', { inline_keyboard: tgMenuKb_() });
+    console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
+  });
 }

@@ -1019,8 +1019,12 @@ function tgEdit_(msg, text, kb) {
 const PAGES_URL = 'https://bagaaganaa1111-bit.github.io/expo-booking/';
 function tgMenuKb_() {
   const web = prop_('PAGES_URL') || PAGES_URL;
-  const b = m => ({ text: m[0], callback_data: 'm|' + m[1] });
-  return [TG_MENU.slice(0, 2).map(b), TG_MENU.slice(2, 4).map(b), [b(TG_MENU[4])], [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
+  const b = m => ({ text: m[0], callback_data: 'm|' + m[1] }), sheet = sheetUrl_(SH.ORG);
+  return [TG_MENU.slice(0, 2).map(b), TG_MENU.slice(2, 4).map(b), [b(TG_MENU[4])].concat(sheet ? [{ text: '📑 Бүртгэл (Sheets)', url: sheet }] : []), [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
+}
+/** Sheets файлын тухайн хуудсыг шууд нээх холбоос (файлд эрхтэй хүнд нээгдэнэ). */
+function sheetUrl_(name) {
+  try { const sh = ss_().getSheetByName(name); return sh ? ss_().getUrl() + '#gid=' + sh.getSheetId() : ''; } catch (e) { return ''; }
 }
 function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'HH:mm'); }
 
@@ -1235,7 +1239,8 @@ function tgOrgs_(who, msg, a) {
   const boss = who.role === 'admin', sum = found.reduce((t, r) => t + (S === 'due' ? owe(r) : num_(r['Дүн'])), 0);
   const money = boss && found.length && S !== 'off' ? ' · ' + (S === 'due' ? 'үлдэгдэл ' : '') + fmt_(sum) + '₮' : '';
   const head = '🗂 ' + ename(X) + ' · ' + pname + ' · ' + (OF[S] || OF.act)[0] + '\n' + found.length + ' лангуу, ' + Object.keys(orgs).length + ' байгууллага' + money;
-  const kb = [[{ text: '🔁 Шүүлт солих', callback_data: 'o|p|' + X + '|' + P }, home]];
+  const kb = [[{ text: '🔁 Шүүлт солих', callback_data: 'o|p|' + X + '|' + P }, home]], part = sheetUrl_(SH.PART);
+  if (part) kb.push([{ text: '📑 Бүтэн жагсаалт (Sheets)', url: part }]);
   if (!found.length) return show(head + '\n\nИйм оролцогч олдсонгүй.', kb);
   let text = head, group = '';
   for (let i = 0; i < found.length; i++) {

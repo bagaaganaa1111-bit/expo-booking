@@ -144,6 +144,35 @@
 4. **tgConnect**-ийг нэг удаа ажиллуулна (ботын цэсэнд 🗂 Оролцогчид нэмэгдэнэ).
 5. Ажилтнууд ботын хувийн чатад `/login PIN` гэж бичиж холбогдоно.
 
+## 🚀 Автомат deploy (GitHub → Apps Script)
+
+Тохируулсны дараа `apps-script/Code.gs` өөрчлөгдөж `main` руу push хийгдэхэд **1–2 минутад** Apps Script өөрөө шинэчлэгдэнэ: код хуулах, setup, New version, tgConnect — алийг нь ч гараар хийхгүй.
+
+**Яаж ажилладаг вэ** (`.github/workflows/deploy-apps-script.yml` → `tools/deploy-gas.mjs`):
+1. Синтакс шалгана. Алдаатай бол deploy хийхгүй.
+2. Одоогийн кодыг нөөцлөнө (GitHub Actions → artifact, 90 хоног).
+3. Зөвхөн **Code** файлыг солино — manifest, бусад файл хэвээр.
+4. Шинэ хувилбар үүсгэж веб аппыг түүн рүү шилжүүлнэ (**холбоос өөрчлөгдөхгүй**).
+5. Веб аппыг 3 удаа шалгана. Ажиллахгүй бол **өмнөх хувилбар руу автоматаар буцаана**, GitHub танд имэйлээр мэдэгдэнэ.
+6. Шинэ хувилбарын анхны хүсэлт дээр систем өөрөө шилжилт хийнэ (шинэ хуудас/багана, бүтээгдэхүүн, хуваарь, ботын цэс) — `setup` гараар ажиллуулах хэрэггүй. Систем админд **"🔄 Систем шинэчлэгдлээ"** мессеж очно.
+
+**Нэг удаагийн тохиргоо (≈10 минут):**
+1. **Apps Script API асаах:** https://script.google.com/home/usersettings → *Google Apps Script API* → **ON**.
+2. **Script ID:** Apps Script → ⚙️ *Project Settings* → *IDs* → **Script ID**-г хуулна.
+3. **Google нэвтрэлт (clasp login)** — аль нэгээр нь:
+   - *Компьютер дээр:* nodejs.org-оос Node.js (LTS) суулгаад PowerShell дээр `npx @google/clasp login` → нээгдсэн хөтөч дээр **скрипт эзэмшдэг Google бүртгэлээ** сонгоод *Allow* → `notepad $HOME\.clasprc.json` → агуулгыг бүтнээр нь хуулна.
+   - *VPS дээр:* `docker run --rm -it node:22 sh -c "npx -y @google/clasp login --no-localhost && cat /root/.clasprc.json"` → заасан холбоосыг хөтөчөөр нээж зөвшөөрөөд гарсан кодыг буулгана → хэвлэгдсэн JSON-ийг хуулна.
+4. **GitHub secret:** репо → *Settings → Secrets and variables → Actions → New repository secret*:
+   - `CLASPRC_JSON` = 3-р алхмын JSON (бүтнээр)
+   - `SCRIPT_ID` = 2-р алхмын Script ID
+5. **Шалгах:** репо → *Actions → Apps Script deploy → Run workflow*. Ногоон ✓ гарч, Telegram-д "🔄 Систем шинэчлэгдлээ" ирвэл бэлэн.
+
+**Анхаарах:**
+- Apps Script доторх кодын файл **Code** нэртэй байх ёстой (анхдагч нэр).
+- `CLASPRC_JSON` нь таны Google бүртгэлийн Apps Script-д хандах түлхүүр — хэнд ч бүү үзүүл; GitHub secret нийтийн репод ч нууц хадгалагдана. Нууц алдагдсан гэж үзвэл https://myaccount.google.com/permissions дээр "clasp"-ийн эрхийг хасаад 3–4-р алхмыг давтана.
+- Код шинэ төрлийн Google эрх (жишээ нь Gmail) шаардвал Apps Script дээр аль нэг функцийг нэг удаа гараар ажиллуулж зөвшөөрөл өгнө. Ийм өөрчлөлт хийх үед урьдчилан хэлнэ.
+- "Нэвтрэлт хүчингүй" алдаа гарвал (Google нууц үг сольсон гэх мэт) 3–4-р алхмыг давтана.
+
 ## Шинэ хувилбар алдаатай бол буцаах (1 минут)
 
 Apps Script → **Deploy → Manage deployments** → ✏️ → **Version** жагсаалтаас өмнөх хувилбарыг сонгоод **Deploy**. Холбоос өөрчлөгдөхгүй, систем шууд хуучин хувилбараараа ажиллана.

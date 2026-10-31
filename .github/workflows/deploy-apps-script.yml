@@ -1,0 +1,43 @@
+# apps-script/ өөрчлөгдөж main руу push хийгдэхэд Google Apps Script-д автоматаар deploy хийнэ.
+# Шаардлагатай secret-ууд (Settings → Secrets and variables → Actions):
+#   CLASPRC_JSON — clasp login-оор үүссэн ~/.clasprc.json файлын агуулга
+#   SCRIPT_ID    — Apps Script → ⚙️ Project Settings → Script ID
+name: Apps Script deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script/**', 'tools/deploy-gas.mjs', '.github/workflows/deploy-apps-script.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Хувилбарын тэмдэг
+        run: echo "BUILD=${GITHUB_SHA::7} · $(TZ=Asia/Ulaanbaatar date +'%Y-%m-%d %H:%M')" >> "$GITHUB_ENV"
+      - name: Синтакс шалгах
+        run: cp apps-script/Code.gs /tmp/code.js && node --check /tmp/code.js
+      - name: Deploy
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+          DEPLOYMENT_ID: AKfycbyIG0JUpqjVomlhgLR0aTFaDAyPsaseZGvfSR2GGjVZZtlDsAazwHS74kNfuEQPjfuE
+        run: node tools/deploy-gas.mjs
+      - name: Өмнөх кодын нөөц
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps-script-previous-${{ github.sha }}
+          path: deploy-backup/
+          if-no-files-found: ignore
+          retention-days: 90

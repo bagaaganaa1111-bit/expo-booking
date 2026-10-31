@@ -33,6 +33,8 @@ const COLS = {
 };
 /** Гараар засах хүснэгтүүд (хамгаалалт тавихгүй). */
 const EDITABLE = { 'Бүтээгдэхүүн': 1 };
+/** Хувилбарын тэмдэг. GitHub-ийн автомат deploy коммитын дугаараар солино. */
+const BUILD = 'гараар';
 const BOOKED = { held: 1, adv: 1, paid: 1 };
 const MAX_HOLDS_PER_PHONE = 3;
 const PALETTE = ['#2F6FE0', '#57C8E6', '#F2B84B', '#C98BD6', '#6E7F92', '#5BBE8A', '#E8846B'];
@@ -50,7 +52,7 @@ function doPost(e) {
   catch (err) { return out_({ ok: false, error: 'Хүсэлт буруу байна.' }); }
   if (body && body.update_id !== undefined) {
     // Telegram-ын товч, команд
-    try { tgUpdate_(body, (e && e.parameter) || {}); } catch (err) { reportError_('telegram', err); }
+    try { ensureSchema_(); tgUpdate_(body, (e && e.parameter) || {}); } catch (err) { reportError_('telegram', err); }
     // HtmlService нь шууд 200 буцаана (ContentService-ийн 302 redirect-ийг Telegram алдаа гэж үзээд хойшлуулдаг)
     return HtmlService.createHtmlOutput('ok');
   }
@@ -66,6 +68,7 @@ const STAFF = {
 
 function handle_(req) {
   const a = String(req.a || '');
+  ensureSchema_();
   try {
     if (PUBLIC[a]) return out_(Object.assign({ ok: true }, PUBLIC[a](req)));
     if (STAFF[a]) {
@@ -814,6 +817,7 @@ function reportError_(where, err) {
 
 /** Цаг тутам: хугацаа дууссан түр захиалгыг суллана. */
 function hourlyJob() {
+  ensureSchema_();
   try { hourlyJobRaw_(); } catch (e) { reportError_('цаг тутмын шалгалт', e); }
 }
 function hourlyJobRaw_() {
@@ -924,7 +928,8 @@ function seedProducts_() {
   return rows.length;
 }
 
-function setup() {
+/** Хүснэгтүүдийн гарчиг, хамгаалалт (давтан ажиллуулахад аюулгүй). */
+function setupSheets_() {
   Object.keys(COLS).forEach(name => {
     const sh = sheet_(name);
     // Багана нэмэгдсэн бол гарчгийн мөрийг шинэчилнэ (шинэ багана үргэлж төгсгөлд нэмэгддэг)
@@ -939,6 +944,26 @@ function setup() {
       if (p.canDomainEdit()) p.setDomainEdit(false);
     } catch (e) { console.log(name + ' хамгаалалт тохируулж чадсангүй: ' + e.message); }
   });
+}
+
+/** Цагийн хуваариуд. force=true бол устгаад шинээр; үгүй бол дутуу байгааг л нэмнэ. */
+const TRIGGERS = {
+  hourlyJob: b => b.everyHours(1),
+  dailyReport: b => b.everyDays(1).atHour(9),
+  weeklyBackup: b => b.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(22)
+};
+function setupTriggers_(force) {
+  const have = {};
+  ScriptApp.getProjectTriggers().forEach(t => {
+    const h = t.getHandlerFunction();
+    if (!TRIGGERS[h]) return;
+    if (force || have[h]) ScriptApp.deleteTrigger(t); else have[h] = 1;
+  });
+  Object.keys(TRIGGERS).forEach(h => { if (!have[h]) TRIGGERS[h](ScriptApp.newTrigger(h).timeBased()).create(); });
+}
+
+function setup() {
+  setupSheets_();
   const def = ss_().getSheetByName('Sheet1') || ss_().getSheetByName('Хуудас1');
   if (def && ss_().getSheets().length > 1 && def.getLastRow() === 0) ss_().deleteSheet(def);
   folder_();
@@ -954,13 +979,39 @@ function setup() {
     f.pin = "'" + String(f.pin); writeRow_(SH.STAFF, f);
     console.log('"' + f.name + '" систем админ эрхтэй боллоо. Захирлыг ажилтны хуудасны "Ажилтан" цэсээс нэмнэ үү.');
   }
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (['hourlyJob', 'dailyReport', 'weeklyBackup'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('hourlyJob').timeBased().everyHours(1).create();
-  ScriptApp.newTrigger('dailyReport').timeBased().everyDays(1).atHour(9).create();
-  ScriptApp.newTrigger('weeklyBackup').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(22).create();
+  setupTriggers_(true);
+  setProp_('BUILD', BUILD);
   console.log('Тохиргоо дууслаа. Одоо Deploy → New deployment → Web app хийнэ үү.');
+}
+
+/* ===================== Шинэ хувилбарын автомат шилжилт ===================== */
+/*
+ * GitHub-аас автоматаар deploy хийхэд BUILD өөрчлөгдөнө. Шинэ хувилбарын анхны хүсэлт (эсвэл цаг тутмын шалгалт)
+ * migrate_()-ийг нэг удаа ажиллуулна: шинэ хуудас/багана, бүтээгдэхүүн, хуваарь, ботын командууд.
+ * Ингэснээр setup-ийг гараар ажиллуулах шаардлагагүй. Бүх алхам давтан ажиллуулахад аюулгүй.
+ */
+function ensureSchema_() {
+  if (prop_('BUILD') === BUILD) return;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return; // өөр хүсэлт шилжүүлж байна
+  try {
+    PROPS_ = null;
+    if (prop_('BUILD') === BUILD) return;
+    migrate_();
+    setProp_('BUILD', BUILD);
+  } catch (e) { reportError_('шинэ хувилбар', e); }
+  finally { lock.releaseLock(); }
+}
+function migrate_() {
+  const from = prop_('BUILD') || '—';
+  setupSheets_();
+  seedProducts_();
+  backfillParts_();
+  try { setupTriggers_(false); } catch (e) { reportError_('хуваарь', e); }
+  try { tgCommands_(); } catch (e) {}
+  staffCacheClear_();
+  try { CacheService.getScriptCache().removeAll(['pub_list']); } catch (e) {}
+  notify_('tech', '🔄 Систем шинэчлэгдлээ\n' + from + ' → ' + BUILD);
 }
 
 /** Telegram тохиргоог шалгах: ажиллуулахад туршилтын мессеж очно. */
@@ -1666,6 +1717,18 @@ function tgConnect() {
   const url = (prop_('WEB_APP_URL') || WEB_URL) + '?k=' + sec;
   const r = tg_('setWebhook', { url, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
   console.log(r.ok ? '✅ Товчнууд идэвхжлээ.' : 'АЛДАА: ' + JSON.stringify(r).slice(0, 200));
+  tgCommands_();
+  ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
+    const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
+    console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
+  });
+  Utilities.sleep(1500);
+  const info = tg_('getWebhookInfo', {}).result || {};
+  if (info.last_error_message) console.log('Сүүлийн алдаа: ' + info.last_error_message);
+}
+
+/** Ботын командын жагсаалт (Menu). */
+function tgCommands_() {
   tg_('setMyCommands', { commands: [
     { command: 'menu', description: 'Үндсэн цэс' },
     { command: 'status', description: 'Өнөөдрийн байдал' },
@@ -1675,13 +1738,6 @@ function tgConnect() {
     { command: 'orgs', description: 'Оролцогчид — шүүж харах' },
     { command: 'login', description: 'Ажилтан холбогдох: /login PIN' }
   ] });
-  ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
-    const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
-    console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
-  });
-  Utilities.sleep(1500);
-  const info = tg_('getWebhookInfo', {}).result || {};
-  if (info.last_error_message) console.log('Сүүлийн алдаа: ' + info.last_error_message);
 }
 
 /** Telegram товчны холболтыг шалгана: хүлээгдэж буй мессеж, сүүлийн алдаа. */

@@ -843,6 +843,51 @@ function dailyReportRaw_() {
   notify_('report', 'Өглөөний тайлан\n\n' + lines.join('\n\n'));
 }
 
+/* ===================== Долоо хоног бүрийн нөөц ===================== */
+
+const BACKUP_KEEP = 8; // хэдэн долоо хоногийн хуулбар хадгалах
+const BACKUP_SHEETS = [SH.ORG, SH.PART];
+
+/** Нөөцийн файл (байхгүй эсвэл устсан бол шинээр үүсгэнэ, үндсэн файлтай нэг хавтсанд). */
+function backupFile_() {
+  const id = prop_('BACKUP_ID');
+  if (id) { try { const f = SpreadsheetApp.openById(id); if (!DriveApp.getFileById(id).isTrashed()) return f; } catch (e) {} }
+  const f = SpreadsheetApp.create('Оролцогчдын сан — нөөц');
+  try {
+    const parents = DriveApp.getFileById(ss_().getId()).getParents();
+    if (parents.hasNext()) DriveApp.getFileById(f.getId()).moveTo(parents.next());
+  } catch (e) {}
+  setProp_('BACKUP_ID', f.getId());
+  return f;
+}
+
+/**
+ * Ням гараг бүр: Оролцогчид, Оролцоо хуудсыг "Оролцогчдын сан — нөөц" файл руу огноотой нэрээр хуулна.
+ * Сүүлийн BACKUP_KEEP долоо хоногийнх үлдэж, хуучин нь устна. Гараар ч ажиллуулж болно.
+ */
+function weeklyBackup() {
+  try { weeklyBackupRaw_(); } catch (e) { reportError_('долоо хоногийн нөөц', e); }
+}
+function weeklyBackupRaw_() {
+  const dst = backupFile_(), day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'), counts = [];
+  BACKUP_SHEETS.forEach(name => {
+    const src = ss_().getSheetByName(name);
+    if (!src) return;
+    const title = name + ' ' + day, old = dst.getSheetByName(title), copy = src.copyTo(dst);
+    if (old) dst.deleteSheet(old); // нэг өдөр дахин ажиллуулбал солино
+    copy.setName(title);
+    counts.push(name + ' ' + Math.max(0, src.getLastRow() - 1));
+    // Хуучин хуулбаруудыг цэвэрлэнэ (огноогоор эрэмбэлж, сүүлийн BACKUP_KEEP-ийг үлдээнэ)
+    const mine = dst.getSheets().filter(sh => sh.getName().indexOf(name + ' ') === 0).map(sh => sh.getName()).sort();
+    mine.slice(0, Math.max(0, mine.length - BACKUP_KEEP)).forEach(n => dst.deleteSheet(dst.getSheetByName(n)));
+  });
+  // Анх үүсэхэд гарсан хоосон хуудсыг устгана
+  dst.getSheets().forEach(sh => { if (dst.getSheets().length > 1 && BACKUP_SHEETS.every(n => sh.getName().indexOf(n + ' ') !== 0) && sh.getLastRow() === 0) dst.deleteSheet(sh); });
+  if (!counts.length) return;
+  console.log('Нөөц хадгалагдлаа: ' + counts.join(', ') + ' мөр → ' + dst.getUrl());
+  notify_('tech', '💾 Оролцогчдын сангийн долоо хоногийн нөөц хадгалагдлаа (' + day + ')\n' + counts.join(' · ') + ' мөр\n' + dst.getUrl());
+}
+
 /* ===================== Анхны тохиргоо ===================== */
 
 /** Анхны бүтээгдэхүүний жагсаалт (Бүтээгдэхүүн хуудас хоосон үед setup() нэг удаа бичнэ). */
@@ -903,10 +948,11 @@ function setup() {
     console.log('"' + f.name + '" систем админ эрхтэй боллоо. Захирлыг ажилтны хуудасны "Ажилтан" цэсээс нэмнэ үү.');
   }
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (['hourlyJob', 'dailyReport'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['hourlyJob', 'dailyReport', 'weeklyBackup'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('hourlyJob').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('dailyReport').timeBased().everyDays(1).atHour(9).create();
+  ScriptApp.newTrigger('weeklyBackup').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(22).create();
   console.log('Тохиргоо дууслаа. Одоо Deploy → New deployment → Web app хийнэ үү.');
 }
 

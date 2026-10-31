@@ -21,14 +21,15 @@ const COLS = {
   'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about', 'posterId', 'template'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
   'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy', 'products'],
-  'Ажилтан': ['name', 'pin', 'role', 'active'],
+  'Ажилтан': ['name', 'pin', 'role', 'active', 'tg'],
   'Түүх': ['time', 'expoId', 'code', 'action', 'by', 'detail'],
   // Үзэсгэлэнгийн загвар бүрийн бүтээгдэхүүний жагсаалт. Менежер/захирал Sheets дээр шууд засна.
   'Бүтээгдэхүүн': ['Үзэсгэлэн', 'Дүрс', 'Бүтээгдэхүүн', 'Салбар', 'Идэвхтэй'],
   // Захиалга бүр нэг мөр (цуцлагдсан ч түүх нь үлдэнэ). Систем автоматаар бичнэ.
   'Оролцоо': ['Үзэсгэлэн', 'Лангуу', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Төлөв', 'Дүн', 'Захиалсан', 'Шинэчилсэн', 'Бүртгэсэн', 'expoId', 'boothId'],
   // Байгууллага бүр нэг мөр: бүх үзэсгэлэнгийн нэгдсэн сан. Систем автоматаар бичнэ.
-  'Оролцогчид': ['Түлхүүр', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Оролцсон үзэсгэлэн', 'Тоо', 'Анх бүртгэгдсэн', 'Сүүлд']
+  'Оролцогчид': ['Түлхүүр', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Оролцсон үзэсгэлэн', 'Тоо', 'Анх бүртгэгдсэн', 'Сүүлд',
+    'Салбар', 'Эх сурвалж', 'Нэмсэн', 'Нэмэлт утас', 'Хаяг', 'Вэбсайт', 'Facebook', 'Тайлбар']
 };
 /** Гараар засах хүснэгтүүд (хамгаалалт тавихгүй). */
 const EDITABLE = { 'Бүтээгдэхүүн': 1 };
@@ -306,11 +307,16 @@ function orgSync_(key) {
     String(r['Бүтээгдэхүүн'] || '').split(' | ').forEach(p => { p = p.trim(); if (p && prods.indexOf(p) < 0) prods.push(p); });
   });
   const pick = k => { for (let i = mine.length - 1; i >= 0; i--) if (String(mine[i][k] || '').trim()) return mine[i][k]; return ''; };
-  const all = readAll_(SH.ORG), o = all.find(x => String(x['Түлхүүр']) === key);
-  const row = Object.assign(o || { 'Анх бүртгэгдсэн': mine[0]['Захиалсан'] || new Date() }, {
-    'Түлхүүр': "'" + key, 'Байгууллага': last['Байгууллага'], 'Хариуцах хүн': pick('Хариуцах хүн'), 'Утас': tel_(pick('Утас')), 'Имэйл': pick('Имэйл'),
+  const all = readAll_(SH.ORG), digits = key.replace(/\D/g, '');
+  // Түлхүүрээр, эсвэл screenshot-оор нэмэгдсэн мөрийн нэмэлт утсаар олно
+  const o = all.find(x => String(x['Түлхүүр']) === key) || (/^\d{8}$/.test(digits) && key === digits ? all.find(x => String(x['Нэмэлт утас'] || '').indexOf(digits) >= 0) : null);
+  const row = Object.assign(o || { 'Түлхүүр': key, 'Анх бүртгэгдсэн': mine[0]['Захиалсан'] || new Date() }, {
+    'Байгууллага': last['Байгууллага'], 'Хариуцах хүн': pick('Хариуцах хүн'), 'Имэйл': (o && String(o['Имэйл'] || '').trim()) || pick('Имэйл'),
     'Бүтээгдэхүүн': prods.join(' | '), 'Оролцсон үзэсгэлэн': expos.join(' | '), 'Тоо': expos.length, 'Сүүлд': new Date()
   });
+  row['Түлхүүр'] = "'" + String(row['Түлхүүр']);
+  if (!o || !String(o['Утас'] || '').trim()) row['Утас'] = tel_(pick('Утас')); else row['Утас'] = tel_(o['Утас']);
+  if (!String(row['Эх сурвалж'] || '').trim()) row['Эх сурвалж'] = 'Захиалга';
   if (o) writeRow_(SH.ORG, row); else appendRows_(SH.ORG, [row]);
 }
 
@@ -771,7 +777,8 @@ function apiStaffSave_(req, who) {
     if (all.some(s => s !== cur && Number(s.pin) === Number(pin))) fail_('Энэ PIN өөр ажилтанд олгогдсон байна. Өөр PIN сонгоно уу.');
     if (cur && cur.name === who.name && (!active || role !== role_(cur.role))) fail_('Өөрийнхөө эрхийг өөрчлөх, идэвхгүй болгох боломжгүй.');
     const o = { name, pin: "'" + pin, role, active: active ? 'тийм' : 'үгүй' };
-    if (cur) { Object.assign(cur, o); writeRow_(SH.STAFF, cur); } else appendRows_(SH.STAFF, [o]);
+    if (cur) { Object.assign(cur, o); if (cur.tg) cur.tg = "'" + String(cur.tg); writeRow_(SH.STAFF, cur); } else appendRows_(SH.STAFF, [o]);
+    staffCacheClear_();
     log_('', '', cur ? 'ажилтан засварласан' : 'ажилтан нэмсэн', who.name, name + ' (' + ROLE_NAME[role] + (active ? '' : ', идэвхгүй') + ')');
     return { saved: true };
   });
@@ -1032,6 +1039,9 @@ function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScri
 function tgWho_(chatId, from) {
   const id = String(chatId || '');
   if (!id) return null;
+  // Ботод /login PIN-ээр холбогдсон ажилтан (хувийн чат)
+  const st = staffByTg_(id);
+  if (st) return { name: st.name + ' (Telegram)', short: st.name, role: st.role === 'staff' ? 'staff' : 'admin', chat: id, staff: true };
   // TELEGRAM_USERS: мэдэгдэл авахгүй ч ботод хувиараа бичиж цэс, товч ашиглах захирлууд
   const boss = ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_USERS')).indexOf(id) >= 0;
   const staff = !boss && ids_('TELEGRAM_CHAT').indexOf(id) >= 0;
@@ -1086,16 +1096,31 @@ function tgUpdate_(u, p) {
   if (u.callback_query) return tgCallback_(u.callback_query);
   const m = u.message;
   if (!m || !m.chat) return;
+  const text = String(m.text || '').trim(), cmd = text.split(/[\s@]/)[0].toLowerCase();
+  if (cmd === '/login') return tgLogin_(m);
   const who = tgWho_(m.chat.id, m.from);
-  if (!who) { tgRemember_(m.chat); return; }
-  const text = String(m.text || '').trim();
+  if (!who) { tgRemember_(m.chat); if (m.chat.type === 'private') tgStranger_(m.chat.id); return; }
+  if (cmd === '/logout') return tgLogout_(who.chat);
+  // 📸 Байгууллагын зураг → оролцогчдын сан
+  if (m.photo || (m.document && /^image\//.test(String(m.document.mime_type || '')))) {
+    try { return tgLeadPhoto_(who, m); } catch (err) { if (!(err && err.userMessage)) reportError_('зураг', err); return tgSend_(who.chat, '⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Зургаа дахин явуулна уу.')); }
+  }
   if (!text) return;
-  const cmd = text.split(/[\s@]/)[0].toLowerCase(), fk = 'tgf_' + who.chat + '_' + (m.from && m.from.id);
-  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.', { inline_keyboard: tgMenuKb_() });
+  const lid = m.reply_to_message ? cache.get('leadmsg_' + who.chat + '_' + m.reply_to_message.message_id) : '';
+  if (lid) return tgLeadFix_(who, lid, text);
+  const fk = 'tgf_' + who.chat + '_' + (m.from && m.from.id);
+  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.' + (m.chat.type === 'private' ? '\n\n📸 Байгууллагын Facebook "Танилцуулга" хэсэг, нэрийн хуудасны зургийг энд явуулбал оролцогчдын санд бүртгэнэ.' : ''), { inline_keyboard: tgMenuKb_() });
   const hit = TG_MENU.find(x => text === x[0] || cmd === '/' + x[1]);
   if (hit) return tgMenuDo_(hit[1], who, m.from, m.message_id);
   const toBot = m.reply_to_message && m.reply_to_message.from && m.reply_to_message.from.is_bot;
   if (cache.get(fk) || toBot || /^\d{8}$/.test(text.replace(/[\s-]/g, ''))) { cache.remove(fk); return tgFind_(who, text); }
+}
+
+/** Эрхгүй хүн ботод хувиараа бичвэл нэвтрэх заавар өгнө (цагт нэг удаа). */
+function tgStranger_(chat) {
+  const c = CacheService.getScriptCache(), k = 'tgs_' + chat;
+  if (c.get(k)) return; c.put(k, '1', 3600);
+  tgSend_(chat, 'Энэ бот Сая Мөнхийн ажилтнуудад зориулагдсан.\nАжилтан бол админ хуудасны PIN-ээрээ холбогдоно:  /login 1234');
 }
 
 /** Эрхгүй чатыг telegramChats()-д харуулахаар түр хадгална. */
@@ -1180,6 +1205,321 @@ function tgFind_(who, q) {
   found.slice(0, 10).forEach(x => tgSend_(who.chat, tgCard_(x.d.e, x.b, x.d.cats), { inline_keyboard: x.d.e.status === 'open' ? tgButtons_(x.d.e, x.b) : [] }));
 }
 
+/* ===================== 📸 Screenshot-оор оролцогч бүртгэх ===================== */
+/*
+ * Ажилтан ботын хувийн чатад /login PIN гэж нэг удаа холбогдоно (PIN = админ хуудасны PIN).
+ * Дараа нь байгууллагын Facebook "Танилцуулга", нэрийн хуудас, вэбсайтын зургийг явуулахад:
+ *   1) бот "⏳ Уншиж байна…" гэж шууд хариулна
+ *   2) AI нэр, утас, имэйл, хаяг, салбарыг уншина (олон зургийг нэг картад нэгтгэнэ)
+ *   3) карт: [✅ Хадгалах] [🏷 Салбар] [❌ Болих]; алдаатай бол карт руу reply бичиж засна
+ *   4) хадгалахад "Оролцогчид" хуудсанд нэмэгдэнэ (утас/нэрээр давхардлыг шалгана)
+ * Ноорог CacheService-д 6 цаг хадгалагдана.
+ */
+
+const LEAD_TTL = 21600; // 6 цаг
+const LEAD_SOURCE = 'Facebook / зураг';
+
+function sectors_() { return Object.keys(SEED_SECTORS).map(k => SEED_SECTORS[k]); }
+
+/* ---------- Ажилтны Telegram холболт ---------- */
+
+/** Telegram чат → ажилтан (Ажилтан хуудасны tg багана). 5 минут кэшлэнэ. */
+function staffByTg_(chatId) {
+  const c = CacheService.getScriptCache();
+  let map = null;
+  try { map = JSON.parse(c.get('tgstaff') || 'null'); } catch (e) {}
+  if (!map) {
+    map = {};
+    readAll_(SH.STAFF).forEach(s => {
+      const id = String(s.tg || '').trim();
+      if (id && String(s.active).toLowerCase() !== 'false' && String(s.active) !== 'үгүй') map[id] = { name: String(s.name), role: role_(s.role) };
+    });
+    try { c.put('tgstaff', JSON.stringify(map), 300); } catch (e) {}
+  }
+  return map[String(chatId)] || null;
+}
+function staffCacheClear_() { try { CacheService.getScriptCache().remove('tgstaff'); } catch (e) {} }
+
+/** /login 1234 — ажилтны хувийн чатыг PIN-ээр холбоно. PIN-тэй мессежийг устгана. */
+function tgLogin_(m) {
+  const chat = String(m.chat.id), cache = CacheService.getScriptCache(), fk = 'tglf_' + chat;
+  tg_('deleteMessage', { chat_id: chat, message_id: m.message_id });
+  if (m.chat.type !== 'private') return tgSend_(chat, '🔐 Нэвтрэхдээ ботын хувийн чат руу бичнэ үү (групп дотор PIN бүү бичээрэй).');
+  if (num_(cache.get(fk)) >= 5) return tgSend_(chat, '🔐 Олон удаа буруу оруулсан тул 15 минутын дараа дахин оролдоно уу.');
+  const pin = String(m.text || '').trim().split(/\s+/)[1] || '';
+  if (!/^\d{4,8}$/.test(pin)) return tgSend_(chat, 'PIN кодоо хамт бичнэ үү. Жишээ нь:  /login 1234');
+  const r = withLock_(() => {
+    const all = readAll_(SH.STAFF);
+    const s = all.find(x => Number(String(x.pin).trim()) === Number(pin) && String(x.active).toLowerCase() !== 'false' && String(x.active) !== 'үгүй');
+    if (!s) return null;
+    all.forEach(x => { if (x !== s && String(x.tg || '') === chat) { x.tg = ''; x.pin = "'" + String(x.pin); writeRow_(SH.STAFF, x); } });
+    s.tg = "'" + chat; s.pin = "'" + String(s.pin); writeRow_(SH.STAFF, s);
+    return s;
+  });
+  if (!r) {
+    cache.put(fk, String(num_(cache.get(fk)) + 1), 900);
+    Utilities.sleep(800);
+    return tgSend_(chat, '❌ PIN буруу байна. Админ хуудсанд нэвтэрдэг PIN-ээ бичнэ үү.');
+  }
+  cache.remove(fk); staffCacheClear_();
+  log_('', '', 'Telegram холбосон', String(r.name), chat);
+  tgSend_(chat, '✅ Сайн байна уу, ' + r.name + '! Холбогдлоо.\n\n📸 Байгууллагын Facebook пэйжийн "Танилцуулга / About" хэсэг, нэрийн хуудас эсвэл вэбсайтын зургийг энд явуулахад оролцогчдын санд бүртгэнэ. Нэг байгууллагын хэд хэдэн зургийг нэг дор явуулж болно.', { inline_keyboard: tgMenuKb_() });
+}
+
+function tgLogout_(chat) {
+  withLock_(() => readAll_(SH.STAFF).forEach(x => { if (String(x.tg || '') === String(chat)) { x.tg = ''; x.pin = "'" + String(x.pin); writeRow_(SH.STAFF, x); } }));
+  staffCacheClear_();
+  tgSend_(chat, '👋 Гарлаа. Дахин холбогдох бол /login PIN гэж бичнэ үү.');
+}
+
+/* ---------- Claude ---------- */
+
+/** Claude-д хүсэлт илгээж текст хариуг буцаана. Алдааг ажилтанд ойлгомжтой болгоно. */
+function claude_(content, maxTokens) {
+  const key = prop_('CLAUDE_API_KEY');
+  if (!key) fail_('AI тохиргоо хийгдээгүй байна (CLAUDE_API_KEY). Систем админд хандана уу.');
+  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({ model: prop_('CLAUDE_MODEL') || 'claude-sonnet-5-5', max_tokens: maxTokens || 1500, messages: [{ role: 'user', content }] })
+  });
+  const code = resp.getResponseCode(), body = resp.getContentText();
+  if (code !== 200) {
+    reportError_('AI', new Error('Claude API ' + code + ': ' + body.slice(0, 300)));
+    if (/credit balance/i.test(body)) { notify_('tech', '💳 Claude API кредит дууссан байна. console.anthropic.com → Billing хэсгээс цэнэглэнэ үү.'); fail_('AI үйлчилгээний төлбөр дууссан байна. Систем админд мэдэгдлээ.'); }
+    fail_(code === 429 || code === 529 ? 'AI завгүй байна. 1 минутын дараа зургаа дахин явуулна уу.' : 'AI уншиж чадсангүй. Зургаа дахин явуулна уу.');
+  }
+  return (JSON.parse(body).content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+}
+function json_(text) {
+  const t = s => { try { return JSON.parse(s); } catch (e) { return null; } };
+  let j = t(text);
+  if (!j) { const a = text.indexOf('{'), b = text.lastIndexOf('}'); if (a >= 0 && b > a) j = t(text.slice(a, b + 1)); }
+  return j && typeof j === 'object' ? j : null;
+}
+
+function leadPrompt_() {
+  return 'Энэ бол Монгол байгууллагын Facebook пэйж, нэрийн хуудас эсвэл вэбсайтын зураг. Байгууллагын мэдээллийг гарга. ' +
+    'Зөвхөн зураг дээр бичигдсэн зүйлийг бич, бүү таамагла. Утасны дугаарыг зөвхөн цифрээр бич.\n' +
+    'Зөвхөн дараах JSON-ыг, өөр үггүйгээр буцаа:\n' +
+    '{"org":"","phones":[],"email":"","address":"","website":"","facebook":"","about":"","sectors":[]}\n' +
+    'org: байгууллагын нэр. about: юу хийдгийг 1 өгүүлбэрээр (зураг дээрх мэдээллээр). ' +
+    'sectors: доорх жагсаалтаас үйл ажиллагаанд нь хамгийн тохирох 1–3 дугаар (хамгийн тохирохыг эхэнд), тодорхойгүй бол хоосон:\n' +
+    sectors_().map((s, i) => i + '. ' + s).join('\n');
+}
+
+/* ---------- Ноорог ---------- */
+
+function phones_(list) {
+  const out = [];
+  (Array.isArray(list) ? list : [list]).forEach(p => {
+    let d = String(p == null ? '' : p).replace(/\D/g, '');
+    if (d.length === 11 && d.indexOf('976') === 0) d = d.slice(3);
+    if (d.length === 8 && out.indexOf(d) < 0) out.push(d);
+  });
+  return out;
+}
+function leadGet_(id) { try { return JSON.parse(CacheService.getScriptCache().get('lead_' + id) || 'null'); } catch (e) { return null; } }
+function leadPut_(d) { CacheService.getScriptCache().put('lead_' + d.id, JSON.stringify(d), LEAD_TTL); }
+function leadDrop_(d) {
+  const c = CacheService.getScriptCache();
+  c.remove('lead_' + d.id); c.remove('leadmsg_' + d.chat + '_' + d.msg);
+  if (d.group) c.remove('leadgrp_' + d.chat + '_' + d.group);
+}
+
+/** AI-ийн хариуг ноорогт нэгтгэнэ: хоосон талбарыг нөхөж, утас/салбарыг нэмнэ. replace=true бол бүрэн солино (reply-ээр зассан үед). */
+function leadMerge_(d, j, replace) {
+  const S = sectors_(), s = v => str_(v, 200);
+  ['org', 'email', 'address', 'website', 'facebook', 'about'].forEach(k => { const v = s(j[k]); if (replace ? j[k] !== undefined : (v && !d[k])) d[k] = v; });
+  const ph = phones_(j.phones);
+  d.phones = replace && Array.isArray(j.phones) ? ph : phones_((d.phones || []).concat(ph));
+  const sec = (Array.isArray(j.sectors) ? j.sectors : []).map(x => typeof x === 'number' || /^\d+$/.test(String(x)) ? S[Number(x)] : S.find(n => n === String(x))).filter(Boolean);
+  d.sectors = replace && Array.isArray(j.sectors) ? sec.slice(0, 3) : (d.sectors || []).concat(sec.filter(x => (d.sectors || []).indexOf(x) < 0)).slice(0, 3);
+  if (d.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) d.email = '';
+  return d;
+}
+
+/** Санд аль хэдийн байгаа эсэх: утас (үндсэн ба нэмэлт) эсвэл нэрээр. */
+const normName_ = n => String(n || '').toLowerCase().replace(/["'«»“”]/g, '').replace(/\b(ххк|хк|ххх|llc|ltd)\b/g, '').replace(/\s+/g, ' ').trim();
+function leadDup_(d, orgs) {
+  orgs = orgs || readAll_(SH.ORG);
+  const ph = d.phones || [], nm = normName_(d.org);
+  return orgs.find(o => {
+    const mine = phones_([o['Утас']].concat(String(o['Нэмэлт утас'] || '').split(/[,\s]+/)));
+    return ph.some(p => mine.indexOf(p) >= 0);
+  }) || (nm.length >= 3 ? orgs.find(o => normName_(o['Байгууллага']) === nm) : null) || null;
+}
+
+/** Салбарт тохирох үзэсгэлэнгийн загварууд (Бүтээгдэхүүн хуудасны Салбар баганаар). */
+function tplsForSectors_(secs) {
+  if (!secs || !secs.length) return [];
+  // Загвар бүрт тухайн салбарын хэдэн бүтээгдэхүүн байгаагаар эрэмбэлнэ (үндсэн салбарт 2 оноо)
+  const score = {};
+  readAll_(SH.PROD).forEach(p => {
+    const i = secs.indexOf(String(p['Салбар'])), t = String(p['Үзэсгэлэн']);
+    if (i < 0 || NO_[String(p['Идэвхтэй']).trim().toLowerCase()]) return;
+    score[t] = (score[t] || 0) + (i === 0 ? 2 : 1);
+  });
+  const list = Object.keys(score).sort((a, b) => score[b] - score[a]), strong = list.filter(t => score[t] >= 3);
+  return (strong.length ? strong : list).slice(0, 3);
+}
+
+function leadCard_(d) {
+  const dup = leadDup_(d), noContact = !(d.phones || []).length && !d.email, tpl = tplsForSectors_(d.sectors);
+  let t = (d.reading ? '⏳ ' + d.reading + '\n\n' : '') +
+    '🏢 ' + (d.org || '(нэр олдсонгүй)') +
+    '\n🏷 ' + ((d.sectors || []).join(' · ') || 'Салбар тодорхойгүй — 🏷 товчоор сонгоно уу') +
+    (tpl.length ? '\n🎪 Тохирох: ' + tpl.slice(0, 4).join(', ') : '') +
+    ((d.phones || []).length ? '\n📞 ' + d.phones.join(', ') : '') + (d.email ? '\n✉️ ' + d.email : '') +
+    (d.address ? '\n📍 ' + d.address : '') + (d.website ? '\n🌐 ' + d.website : '') + (d.facebook ? '\n📘 ' + d.facebook : '') +
+    (d.about ? '\nℹ️ ' + d.about : '') + '\n📷 ' + (d.photos || 0) + ' зураг';
+  if (noContact) t += '\n\n❗ Утас, имэйл олдсонгүй. "Танилцуулга / About" хэсгийн зургийг нэмж явуулна уу.';
+  if (dup) t += '\n\n⚠️ Санд бүртгэлтэй: ' + dup['Байгууллага'] + (dup['Утас'] ? ' · ' + dup['Утас'] : '') + ' (' + (dup['Эх сурвалж'] || 'захиалга') + (dup['Нэмсэн'] ? ', ' + dup['Нэмсэн'] : '') + ')';
+  t += '\n\n✏️ Алдаатай бол энэ мессежид reply хийгээд бичнэ үү. Жишээ: "утас 99112233", "нэр Номин ХХК"';
+  const k = (txt, a) => ({ text: txt, callback_data: 'L|' + a + '|' + d.id });
+  const row1 = noContact ? [] : [k(dup ? '🔄 Мэдээллийг нэмэх' : '✅ Хадгалах', 's')];
+  return { text: t, kb: [row1.concat([k('🏷 Салбар', 't')]), [k('❌ Болих', 'c')]] };
+}
+function leadShow_(d) { const c = leadCard_(d); tgEdit_({ chat: { id: d.chat }, message_id: d.msg }, c.text, c.kb); }
+
+/* ---------- Зураг хүлээн авах ---------- */
+
+/** Зурагтай мессеж: ноорог үүсгэх (эсвэл цомгийн нооргод нэмэх) → AI уншина → карт шинэчилнэ. */
+function tgLeadPhoto_(who, m) {
+  const chat = String(m.chat.id), group = m.media_group_id ? String(m.media_group_id) : '', c = CacheService.getScriptCache();
+  const fileId = m.photo ? m.photo[m.photo.length - 1].file_id : m.document.file_id;
+  // 1) Ноорог: цомгийн зургууд зэрэг ирж болох тул түгжээн дотор нэг л ноорог үүсгэнэ
+  const d0 = withLock_(() => {
+    const gid = group ? c.get('leadgrp_' + chat + '_' + group) : '';
+    let d = gid ? leadGet_(gid) : null;
+    if (!d) {
+      d = { id: uid_(), chat, by: who.short, photos: 0, phones: [], sectors: [], group, reading: 'Уншиж байна…' };
+      const s = tgSend_(chat, '⏳ Зургийг уншиж байна…', null, { reply_parameters: { message_id: m.message_id, allow_sending_without_reply: true } });
+      d.msg = s && s.result ? s.result.message_id : 0;
+      if (!d.msg) fail_('Telegram руу хариу илгээж чадсангүй.');
+      if (group) c.put('leadgrp_' + chat + '_' + group, d.id, LEAD_TTL);
+      c.put('leadmsg_' + chat + '_' + d.msg, d.id, LEAD_TTL);
+      leadPut_(d);
+    }
+    d.pending = (d.pending || 0) + 1; leadPut_(d);
+    return d;
+  });
+  // 2) AI (түгжээгүй, удаан ажил)
+  let j = null, err = '';
+  try {
+    const f = tg_('getFile', { file_id: fileId }).result || {};
+    if (!f.file_path) fail_('Зургийг Telegram-аас татаж чадсангүй. Дахин явуулна уу.');
+    if (num_(f.file_size) > 5 * 1024 * 1024) fail_('Зураг хэт том байна (5MB-аас бага).');
+    const blob = UrlFetchApp.fetch('https://api.telegram.org/file/bot' + prop_('TELEGRAM_TOKEN') + '/' + f.file_path).getBlob();
+    const mime = /\.png$/i.test(f.file_path) ? 'image/png' : /\.webp$/i.test(f.file_path) ? 'image/webp' : 'image/jpeg';
+    j = json_(claude_([{ type: 'image', source: { type: 'base64', media_type: mime, data: Utilities.base64Encode(blob.getBytes()) } }, { type: 'text', text: leadPrompt_() }], 1200));
+    if (!j) err = 'Зураг дээрээс мэдээлэл олдсонгүй.';
+  } catch (e) { err = e && e.userMessage ? e.userMessage : 'Зургийг уншиж чадсангүй. Дахин явуулна уу.'; if (!(e && e.userMessage)) reportError_('зураг унших', e); }
+  // 3) Нэгтгэж картыг шинэчилнэ (түгжээн дотор — зэрэг ирсэн зургууд бие биенээ дарахгүй)
+  withLock_(() => {
+    const d = leadGet_(d0.id) || d0;
+    d.pending = Math.max(0, (d.pending || 1) - 1);
+    if (j) { leadMerge_(d, j); d.photos = (d.photos || 0) + 1; }
+    d.reading = d.pending ? 'Дараагийн зургийг уншиж байна…' : '';
+    leadPut_(d);
+    if (!d.photos && !d.pending) { tgEdit_({ chat: { id: chat }, message_id: d.msg }, '⚠️ ' + (err || 'Мэдээлэл олдсонгүй.') + '\nFacebook пэйжийн "Танилцуулга / About" хэсгийн зургийг явуулна уу.', []); leadDrop_(d); return; }
+    leadShow_(d);
+    if (err && d.photos) tgSend_(chat, '⚠️ Нэг зургийг уншиж чадсангүй: ' + err);
+  });
+}
+
+/** Карт руу reply бичиж засах: AI одоогийн ноорог + бичсэн тайлбараар шинэчилнэ. */
+function tgLeadFix_(who, id, text) {
+  const d = leadGet_(id);
+  if (!d) return tgSend_(who.chat, '⌛ Энэ ноорог хугацаа дууссан эсвэл хадгалагдсан байна. Зургаа дахин явуулна уу.');
+  const cur = { org: d.org || '', phones: d.phones || [], email: d.email || '', address: d.address || '', website: d.website || '', facebook: d.facebook || '', about: d.about || '', sectors: (d.sectors || []).map(s => sectors_().indexOf(s)) };
+  let j = null;
+  try {
+    j = json_(claude_([{ type: 'text', text: 'Байгууллагын бүртгэлийн ноорог:\n' + JSON.stringify(cur) + '\n\nАжилтны засвар: "' + str_(text, 500) + '"\n\n' +
+      'Засварын дагуу JSON-ыг шинэчил (засаагүй талбарыг хэвээр үлдээ; "нэмэх" гэвэл утсыг нэмнэ, "солих/зөв нь" гэвэл солино). Зөвхөн бүтэн JSON буцаа. sectors: дугаараар:\n' +
+      sectors_().map((s, i) => i + '. ' + s).join('\n') }], 800));
+  } catch (e) { return tgSend_(who.chat, '⚠️ ' + (e.userMessage || 'Засаж чадсангүй. Дахин бичнэ үү.')); }
+  if (!j) return tgSend_(who.chat, '⚠️ Засварыг ойлгосонгүй. Жишээ нь: "утас 99112233" гэж бичнэ үү.');
+  withLock_(() => { const x = leadGet_(id); if (!x) return; leadMerge_(x, j, true); leadPut_(x); leadShow_(x); });
+}
+
+/* ---------- Товчнууд ---------- */
+
+function tgLeadBtn_(who, q, a) {
+  const act = a[1], id = a[2], d = leadGet_(id), ans = (t, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: t || '', show_alert: !!alert });
+  if (!d) { ans(); return tgEdit_(q.message, (q.message.text || '') + '\n\n⌛ Ноорог хугацаа дууссан. Зургаа дахин явуулна уу.', []); }
+  if (act === 'c') { ans('Болиулсан'); leadDrop_(d); return tgEdit_(q.message, '❌ Болиулсан' + (d.org ? ': ' + d.org : ''), []); }
+  if (act === 't' || act === 'x') {
+    if (act === 'x') {
+      const s = sectors_()[Number(a[3])];
+      withLock_(() => { const x = leadGet_(id) || d, i = (x.sectors || []).indexOf(s); if (i >= 0) x.sectors.splice(i, 1); else if ((x.sectors || []).length < 3) (x.sectors = x.sectors || []).push(s); else ans('Хамгийн ихдээ 3 салбар', true); leadPut_(x); Object.assign(d, x); });
+    }
+    ans();
+    const kb = sectors_().map((s, i) => [{ text: ((d.sectors || []).indexOf(s) >= 0 ? '✅ ' : '') + s, callback_data: 'L|x|' + id + '|' + i }]);
+    kb.push([{ text: '✔️ Болсон', callback_data: 'L|b|' + id }]);
+    return tgEdit_(q.message, '🏷 ' + (d.org || '') + '\nСалбараа сонгоно уу (3 хүртэл):', kb);
+  }
+  if (act === 'b') { ans(); return leadShow_(d); }
+  if (act === 's') {
+    ans('Хадгалж байна…');
+    const r = withLock_(() => leadSave_(leadGet_(id) || d, who));
+    leadDrop_(d);
+    return tgEdit_(q.message, (r.merged ? '🔄 Нэмэлт мэдээлэл хадгаллаа: ' : '✅ Хадгаллаа: ') + r.org + (r.sectors ? '\n🏷 ' + r.sectors : '') +
+      '\n\n📊 Санд нийт ' + r.total + ' байгууллага · Өнөөдөр та ' + r.today + ' нэмлээ', sheetUrl_(SH.ORG) ? [[{ text: '📑 Бүртгэл (Sheets)', url: sheetUrl_(SH.ORG) }]] : []);
+  }
+}
+
+/** Оролцогчид хуудсанд шинээр нэмэх эсвэл байгаа мөрийг нөхөнө. withLock_ дотор дуудна. */
+function leadSave_(d, who) {
+  const orgs = readAll_(SH.ORG), dup = leadDup_(d, orgs), now = new Date(), ph = d.phones || [];
+  const join = (a, b) => { const out = []; String(a || '').split(' | ').concat(b || []).forEach(x => { x = String(x).trim(); if (x && out.indexOf(x) < 0) out.push(x); }); return out.join(' | '); };
+  let row, merged = false;
+  if (dup) {
+    merged = true; row = dup;
+    const main = phones_([row['Утас']]), extra = phones_(String(row['Нэмэлт утас'] || '').split(/[,\s]+/).concat(ph)).filter(p => main.indexOf(p) < 0);
+    if (!main.length && extra.length) row['Утас'] = tel_(extra.shift()); else if (main.length) row['Утас'] = tel_(main[0]);
+    row['Нэмэлт утас'] = extra.join(', ');
+    [['Имэйл', 'email'], ['Хаяг', 'address'], ['Вэбсайт', 'website'], ['Facebook', 'facebook'], ['Тайлбар', 'about']].forEach(f => { if (!String(row[f[0]] || '').trim() && d[f[1]]) row[f[0]] = d[f[1]]; });
+    row['Салбар'] = join(row['Салбар'], d.sectors);
+    if (String(row['Эх сурвалж'] || '').indexOf(LEAD_SOURCE) < 0) row['Эх сурвалж'] = join(row['Эх сурвалж'] || 'Захиалга', [LEAD_SOURCE]);
+    row['Түлхүүр'] = "'" + String(row['Түлхүүр']); row['Сүүлд'] = now;
+    writeRow_(SH.ORG, row);
+  } else {
+    row = { 'Түлхүүр': "'" + orgKey_(ph[0], d.org), 'Байгууллага': d.org || '(нэргүй)', 'Утас': tel_(ph[0] || ''), 'Нэмэлт утас': ph.slice(1).join(', '), 'Имэйл': d.email || '',
+      'Хаяг': d.address || '', 'Вэбсайт': d.website || '', 'Facebook': d.facebook || '', 'Тайлбар': d.about || '', 'Салбар': (d.sectors || []).join(' | '),
+      'Эх сурвалж': LEAD_SOURCE, 'Нэмсэн': who.short, 'Тоо': 0, 'Анх бүртгэгдсэн': now, 'Сүүлд': now };
+    appendRows_(SH.ORG, [row]);
+  }
+  log_('', '', merged ? 'оролцогч нөхсөн' : 'оролцогч нэмсэн', who.name, (d.org || '') + ' ' + (ph[0] || ''));
+  const today = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const all = merged ? orgs : orgs.concat([row]);
+  const mineToday = all.filter(o => String(o['Нэмсэн']) === who.short && o['Анх бүртгэгдсэн'] && Utilities.formatDate(new Date(o['Анх бүртгэгдсэн']), Session.getScriptTimeZone(), 'yyyy-MM-dd') === today).length;
+  return { merged, org: String(row['Байгууллага']), sectors: String(row['Салбар'] || ''), total: all.length, today: mineToday };
+}
+
+/* ---------- 🏷 Сангаас салбараар харах ---------- */
+
+function tgSectors_(who, msg, a) {
+  const S = sectors_(), orgs = readAll_(SH.ORG), show = (text, kb) => msg ? tgEdit_(msg, text, kb) : tgSend_(who.chat, text, { inline_keyboard: kb });
+  const has = (o, s) => String(o['Салбар'] || '').split(' | ').indexOf(s) >= 0;
+  if (a[1] === 'g') {
+    const kb = S.map((s, i) => [{ text: s + ' (' + orgs.filter(o => has(o, s)).length + ')', callback_data: 'o|G|' + i }]);
+    kb.push([{ text: '❔ Салбаргүй (' + orgs.filter(o => !String(o['Салбар'] || '').trim()).length + ')', callback_data: 'o|G|-' }, { text: '🏠 Эхнээс', callback_data: 'o|0' }]);
+    return show('🏷 Оролцогчдын сан — нийт ' + orgs.length + ' байгууллага\nСалбараа сонгоно уу:', kb);
+  }
+  const s = a[2] === '-' ? '' : S[Number(a[2])], list = orgs.filter(o => s ? has(o, s) : !String(o['Салбар'] || '').trim());
+  list.sort((p, q) => num_(q['Тоо']) - num_(p['Тоо']) || String(p['Байгууллага']).localeCompare(String(q['Байгууллага'])));
+  let text = '🏷 ' + (s || 'Салбаргүй') + ' — ' + list.length + ' байгууллага\n🎪 = оролцсон үзэсгэлэнгийн тоо\n';
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i], line = '\n• ' + o['Байгууллага'] + (o['Утас'] ? ' · ' + o['Утас'] : '') + (num_(o['Тоо']) ? ' · 🎪' + num_(o['Тоо']) : ' · шинэ');
+    if (text.length + line.length > 3700) { text += '\n\n…үлдсэн ' + (list.length - i) + '. Бүтэн жагсаалт: Sheets → Оролцогчид.'; break; }
+    text += line;
+  }
+  const kb = [[{ text: '↩️ Салбарууд', callback_data: 'o|g' }, { text: '🏠 Эхнээс', callback_data: 'o|0' }]], u = sheetUrl_(SH.ORG);
+  if (u) kb.push([{ text: '📑 Бүртгэл (Sheets)', url: u }]);
+  return show(text, kb);
+}
+
 /* ---------- 🗂 Оролцогчид: үзэсгэлэн → бүтээгдэхүүн → төлөв → жагсаалт ---------- */
 /*
  * callback_data: o|0                — эхлэл (үзэсгэлэн сонгох)
@@ -1208,11 +1548,12 @@ function tgOrgs_(who, msg, a) {
   const cut = (t, n) => (t = String(t)).length > n ? t.slice(0, n - 1) + '…' : t;
   const home = { text: '🏠 Эхнээс', callback_data: 'o|0' };
 
+  if (step === 'g' || step === 'G') return tgSectors_(who, msg, a);
   if (step === '0') {
     const has = {}; rows.forEach(r => { has[r.expoId] = 1; });
-    const list = expos.filter(e => has[e.id]).slice(0, 12);
-    if (!list.length) return show('🗂 Оролцогчдын сан хоосон байна.\nЗахиалга орж ирэхэд энд автоматаар бүртгэгдэнэ.', tgMenuKb_());
-    return show('🗂 Оролцогчид\nҮзэсгэлэнгээ сонгоно уу:', pairs(list.map(e => ({ text: cut(e.name, 30), callback_data: 'o|e|' + e.id }))).concat([[{ text: '🌐 Бүх үзэсгэлэн', callback_data: 'o|e|*' }]]));
+    const list = expos.filter(e => has[e.id]).slice(0, 12), sec = [{ text: '🏷 Бүх сан — салбараар', callback_data: 'o|g' }];
+    if (!list.length) return show('🗂 Оролцогчид\nЗахиалгатай үзэсгэлэн алга. Сангаа салбараар харах:', [sec]);
+    return show('🗂 Оролцогчид\nҮзэсгэлэнгээ сонгоно уу:', pairs(list.map(e => ({ text: cut(e.name, 30), callback_data: 'o|e|' + e.id }))).concat([[{ text: '🌐 Бүх үзэсгэлэн', callback_data: 'o|e|*' }], sec]));
   }
   const prods = orgProdList_(X, rows, expos);
   const pname = P === '*' ? 'Бүх бүтээгдэхүүн' : (prods[Number(P)] || '—');
@@ -1258,6 +1599,10 @@ function tgCallback_(q) {
   const msg = q.message || {}, who = tgWho_(msg.chat && msg.chat.id, q.from);
   const ans = (text, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: text || '', show_alert: !!alert });
   if (!who) return ans('Энэ чатаас үйлдэл хийх эрхгүй.', true);
+  if (String(q.data || '').indexOf('L|') === 0) {
+    try { return tgLeadBtn_(who, q, String(q.data).split('|')); }
+    catch (err) { if (!(err && err.userMessage)) reportError_('бүртгэлийн товч', err); return ans('⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Дахин дарна уу.'), true); }
+  }
   const [act, expoId, boothId, expect] = String(q.data || '').split('|');
   const mark = { adv: '✅ Урьдчилгаа орсон', paid: '💵 Бүрэн төлсөн', free: '❌ Цуцалсан', ext: '⏳ 24 цаг сунгасан' }[act];
   // Товчны эргэлдэх тэмдгийг шууд зогсооно: хүн хүлээхгүй, ажил ард нь хийгдэнэ
@@ -1327,7 +1672,8 @@ function tgConnect() {
     { command: 'due', description: 'Авлага' },
     { command: 'soon', description: '24 цагт суллагдах лангуу' },
     { command: 'find', description: 'Утас, нэрээр хайх' },
-    { command: 'orgs', description: 'Оролцогчид — шүүж харах' }
+    { command: 'orgs', description: 'Оролцогчид — шүүж харах' },
+    { command: 'login', description: 'Ажилтан холбогдох: /login PIN' }
   ] });
   ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
     const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });

@@ -793,13 +793,13 @@ function apiStaffSave_(req, who) {
  * Telegram мэдэгдэл. Хэнд очих нь:
  *   ops    — менежерийн групп + захирал (захиалга, төлбөр, цуцлалт, суллагдсан)
  *   report — захирал (санхүүгийн тайлан); захирлын чат тохируулаагүй бол систем админ
- *   tech   — систем админ (алдаа); тохируулаагүй бол захирал
+ *   tech   — систем админ + захирал (алдаа, AI кредит, шинэчлэл, нөөц)
  */
 function notify_(kind, text, opt) {
   if (!prop_('TELEGRAM_TOKEN')) return;
   opt = opt || {};
   const g = ids_('TELEGRAM_CHAT'), d = ids_('TELEGRAM_DIRECTOR'), a = ids_('TELEGRAM_ADMIN');
-  const to = kind === 'ops' ? g.concat(d) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? (a.length ? a : d) : g.concat(d, a);
+  const to = kind === 'ops' ? g.concat(d) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? a.concat(d) : g.concat(d, a);
   to.filter((c, i) => c && to.indexOf(c) === i && String(c) !== String(opt.skip || '')).forEach(chat => {
     tgSend_(chat, text, opt.buttons && opt.buttons.length ? { inline_keyboard: opt.buttons } : null);
   });
@@ -1149,6 +1149,7 @@ function tgUpdate_(u, p) {
   if (!m || !m.chat) return;
   const text = String(m.text || '').trim(), cmd = text.split(/[\s@]/)[0].toLowerCase();
   if (cmd === '/login') return tgLogin_(m);
+  if (cmd === '/id') return tgSend_(m.chat.id, (m.chat.type === 'private' ? '👤 Таны' : '👥 Энэ группын') + ' чатын ID:\n' + m.chat.id + '\n\nМэдэгдэл авахын тулд систем админ энэ дугаарыг TELEGRAM_DIRECTOR тохиргоонд нэмнэ (олон бол таслалаар).');
   const who = tgWho_(m.chat.id, m.from);
   if (!who) { tgRemember_(m.chat); if (m.chat.type === 'private') tgStranger_(m.chat.id); return; }
   if (cmd === '/logout') return tgLogout_(who.chat);

@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Лангуу удирдлага</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="wrap">
@@ -31,6 +31,7 @@
       <h2>Шинэ үзэсгэлэн</h2>
       <div class="grid">
         <label class="f">Нэр *<input id="nName" type="text" placeholder="Цагаан сар 2027"></label>
+        <label class="f">Үзэсгэлэн (бүтээгдэхүүний жагсаалт)<select id="nTpl"><option value="">— Сонгоогүй —</option></select></label>
         <label class="f">Эхлэх өдөр<input id="nStart" type="date"></label>
         <label class="f">Дуусах өдөр<input id="nEnd" type="date"></label>
         <label class="f">Холбоосын нэр (латин)<input id="nSlug" type="text" autocapitalize="off" spellcheck="false" placeholder="tsagaansar2027"></label>
@@ -128,6 +129,7 @@
         <label class="f">Түр барих хугацаа, цаг<input id="sHold" type="number" min="1" max="240" inputmode="numeric"></label>
         <label class="f">Урьдчилгаа, %<input id="sAdv" type="number" min="0" max="100" inputmode="numeric"></label>
         <label class="f">Байршил<input id="sPlace" type="text" placeholder="Урангаан — UG Expo"></label>
+        <label class="f">Бүтээгдэхүүний жагсаалт<select id="sTpl"><option value="">— Асуухгүй —</option></select></label>
         <label class="f" style="grid-column:1/-1">Товч тайлбар (нүүр хуудсанд харагдана)<textarea id="sAbout" rows="3" maxlength="600" placeholder="Монгол өв соёл, гар урлал, үндэсний үйлдвэрлэлийн Цагаан сарын худалдаа-үзэсгэлэн" style="font:15px var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;resize:vertical"></textarea></label>
         <label class="f" style="grid-column:1/-1">Төлбөр төлөх данс (оролцогч захиалсны дараа харна)<input id="sPay" type="text" placeholder="Хаан банк 5012345678, Идэр дөрвөн улирал ХХК"></label>
         <div class="row" style="align-self:end"><button class="btn" type="submit">Тохиргоо хадгалах</button></div>
@@ -148,7 +150,7 @@
 <div id="toast" hidden></div>
 
 <script src="config.js"></script>
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 let PIN = store("expo-pin") || "", USER = null, EXPO = null, CATS = [], BOOTHS = [], hist = [], dirty = false;
 let sel = null, adding = false, drag = null, zoom = 100, cancelArm = null, phoneForm = false, pollT = null, imgData = null;
@@ -188,6 +190,7 @@ async function openList() {
   $("#expoList").innerHTML = '<div class="loading"><span class="spin"></span>Ачааллаж байна…</div>';
   try {
     const r = await call("expos");
+    tplOptions($("#nTpl"), r.templates || [], $("#nTpl").value);
     const st = { draft: ["muted", "Бэлтгэл"], open: ["free", "Захиалга нээлттэй"], closed: ["paid", "Хаагдсан"] };
     $("#expoList").innerHTML = r.expos.length ? r.expos.map(x => {
       const s = st[x.status] || st.draft, pct = x.booths ? Math.round(x.booked / x.booths * 100) : 0;
@@ -201,7 +204,7 @@ $("#newForm").onsubmit = async e => {
   e.preventDefault(); const name = $("#nName").value.trim(); $("#newErr").textContent = "";
   if (!name) { $("#newErr").textContent = "Үзэсгэлэнгийн нэрийг оруулна уу."; return; }
   $("#newBtn").disabled = true;
-  try { const r = await call("createExpo", { name, slug: $("#nSlug").value.trim(), start: $("#nStart").value, end: $("#nEnd").value }); slugTouched = false; $("#newForm").reset(); location.hash = "e=" + r.id; }
+  try { const r = await call("createExpo", { name, template: $("#nTpl").value, slug: $("#nSlug").value.trim(), start: $("#nStart").value, end: $("#nEnd").value }); slugTouched = false; $("#newForm").reset(); location.hash = "e=" + r.id; }
   catch (err) { $("#newErr").textContent = err.message; }
   finally { $("#newBtn").disabled = false; }
 };
@@ -212,7 +215,7 @@ async function openExpo(id, quiet) {
   try {
     const r = await call("staffExpo", { id });
     if (quiet && (dirty || drag)) return;
-    EXPO = r.expo; CATS = r.cats; BOOTHS = r.booths; SKEW = Date.now() - r.now; LAYOUT_VER = r.layoutVer || "";
+    EXPO = r.expo; CATS = r.cats; BOOTHS = r.booths; PRODUCTS = r.products || []; TEMPLATES = r.templates || []; MAXP = r.maxProducts || 3; SKEW = Date.now() - r.now; LAYOUT_VER = r.layoutVer || "";
     if (sel && !byId(sel)) sel = null;
     if (EXPO.imageId) { try { imgData = await loadImage(EXPO.imageId); } catch (e) { toast(e.message); } }
     const refit = !quiet || !FITTED;
@@ -220,7 +223,12 @@ async function openExpo(id, quiet) {
     render();
   } catch (e) { if (!quiet) { $("#eName").textContent = "Нээж чадсангүй"; $("#eMeta").textContent = e.message; } }
 }
-let SKEW = 0, FITTED = false, LAYOUT_VER = "";
+let SKEW = 0, FITTED = false, LAYOUT_VER = "", PRODUCTS = [], TEMPLATES = [], MAXP = 3;
+/** Загварын сонголтуудыг select-д бөглөнө (одоогийн утга жагсаалтад байхгүй ч хадгална). */
+function tplOptions(sel, list, cur) {
+  const first = sel.options[0].outerHTML, all = list.slice(); if (cur && all.indexOf(cur) < 0) all.push(cur);
+  sel.innerHTML = first + all.map(t => '<option value="' + esc(t) + '">' + esc(t) + "</option>").join(""); sel.value = cur || "";
+}
 function render() {
   $("#eName").textContent = EXPO.name;
   $("#eMeta").textContent = [[EXPO.start, EXPO.end].filter(Boolean).join(" – "), { draft: "Бэлтгэл шат", open: "Захиалга нээлттэй", closed: "Захиалга хаагдсан" }[EXPO.status]].filter(Boolean).join(" · ");
@@ -246,6 +254,7 @@ function render() {
   else if (EXPO.status === "open") { note.hidden = false; note.innerHTML = "Захиалга нээлттэй. Оролцогчдод илгээх холбоос: <b style=\"word-break:break-all\">" + esc(pubLink()) + "</b>"; }
   else note.hidden = true;
   $("#sName").value = EXPO.name; $("#sSlug").value = EXPO.slug || ""; $("#sPlace").value = EXPO.place || ""; $("#sAbout").value = EXPO.about || ""; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
+  tplOptions($("#sTpl"), TEMPLATES, EXPO.template || "");
   showPosterBox();
   $("#cSettings").hidden = !BOSS(); $("#addCat").parentElement.hidden = !BOSS();
   renderPlan(); info(); cats(); stats(); list();
@@ -260,7 +269,7 @@ async function setExpoStatus(status) {
 }
 $("#setForm").onsubmit = async e => {
   e.preventDefault();
-  try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), place: $("#sPlace").value, about: $("#sAbout").value, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value }); toast("Тохиргоо хадгалагдлаа."); openExpo(EXPO.id, true); }
+  try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), place: $("#sPlace").value, about: $("#sAbout").value, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value, template: $("#sTpl").value }); toast("Тохиргоо хадгалагдлаа."); openExpo(EXPO.id, true); }
   catch (err) { toast(err.message); }
 };
 
@@ -387,12 +396,13 @@ function info() {
     h += '<div class="grid"><label class="f">Дугаар<input id="iCode" type="text" value="' + esc(b.code) + '"></label><label class="f">м²<input id="iM2" type="number" min="0" step="0.5" inputmode="decimal" value="' + (b.m2 || "") + '"></label>' +
       '<label class="f">Салбар<select id="iCat">' + CATS.map(x => '<option value="' + esc(x.id) + '"' + (x.id === b.cat ? " selected" : "") + ">" + esc(x.name) + "</option>").join("") + "</select></label></div>";
     if (phoneForm) h += '<form id="pf" class="grid" novalidate><label class="f">Байгууллагын нэр *<input id="pOrg" type="text"></label><label class="f">Утас<input id="pTel" type="tel" inputmode="numeric"></label><label class="f">Хариуцах хүн<input id="pPer" type="text"></label><label class="f">Имэйл<input id="pMail" type="email"></label>' +
+      (PRODUCTS.length ? '<div class="f" style="grid-column:1/-1"><span>Юу худалдах вэ?</span><div id="pProd"></div></div>' : "") +
       '<div class="row" style="grid-column:1/-1"><button class="btn pri" type="submit">Түр барих (' + EXPO.holdHours + ' цаг)</button><button class="btn" type="button" id="pPaid">Урьдчилгаа шууд орсон</button><button class="link" type="button" id="pCancel">Болих</button></div></form>';
     else h += '<div class="row"><button class="btn" id="aPhone">Утсаар захиалга авах</button><button class="btn warn" id="aDel">' + (cancelArm === "del" ? "Дахин дарж устгана" : "Лангуу устгах") + "</button></div>";
   } else {
     const left = b.status === "held" && b.heldAt ? Math.max(0, Math.ceil((b.heldAt + EXPO.holdHours * 3600e3 - (Date.now() - SKEW)) / 3600e3)) : null;
     h += '<p class="hint" style="margin-top:-6px">' + (b.m2 || "?") + " м² · " + esc(c.name) + "</p>" +
-      '<div class="kv"><span>Байгууллага</span><b>' + esc(b.org) + "</b>" + (b.person ? "<span>Хариуцах хүн</span><b>" + esc(b.person) + "</b>" : "") + (b.tel ? "<span>Утас</span><b>" + esc(b.tel) + "</b>" : "") + (b.mail ? "<span>Имэйл</span><b>" + esc(b.mail) + "</b>" : "") +
+      '<div class="kv"><span>Байгууллага</span><b>' + esc(b.org) + "</b>" + (b.person ? "<span>Хариуцах хүн</span><b>" + esc(b.person) + "</b>" : "") + (b.tel ? "<span>Утас</span><b>" + esc(b.tel) + "</b>" : "") + (b.mail ? "<span>Имэйл</span><b>" + esc(b.mail) + "</b>" : "") + (b.products ? "<span>Бүтээгдэхүүн</span><b>" + esc(b.products) + "</b>" : "") +
       "<span>Төлсөн</span><b>" + fmt(b.status === "paid" ? pr : b.status === "adv" ? adv : 0) + " / " + fmt(pr) + " ₮</b>" + (left !== null ? "<span>Барьцаа дуусах</span><b>" + left + " цагийн дараа</b>" : "") + (b.updatedBy ? "<span>Сүүлд бүртгэсэн</span><b>" + esc(b.updatedBy) + "</b>" : "") + "</div>" +
       '<div class="row">' + (b.status === "held" ? '<button class="btn pri" id="aAdv">Урьдчилгаа орсон (' + fmt(adv) + " ₮)</button>" : "") + (b.status === "adv" ? '<button class="btn pri" id="aPaid">Үлдэгдэл орсон (' + fmt(pr - adv) + " ₮)</button>" : "") +
       '<button class="btn warn" id="aCancel">' + (cancelArm === b.id ? "Дахин дарж цуцлахыг батална" : "Захиалга цуцлах") + "</button></div>" +
@@ -404,8 +414,8 @@ function info() {
   const ig = $("#iCat"); if (ig) ig.onchange = () => { push(); b.cat = ig.value; changed(); info(); stats(); list(); cats(); };
   const ap = $("#aPhone"); if (ap) ap.onclick = () => { phoneForm = true; info(); setTimeout(() => { const o = $("#pOrg"); if (o) o.focus(); }, 30); };
   const pc = $("#pCancel"); if (pc) pc.onclick = () => { phoneForm = false; info(); };
-  const pf = $("#pf");
-  const phoneBook = async st => { const org = $("#pOrg").value.trim(); if (!org) { toast("Байгууллагын нэрийг оруулна уу."); return; } await setStatus(b, st, { org, tel: $("#pTel").value, person: $("#pPer").value, mail: $("#pMail").value }); phoneForm = false; };
+  const pf = $("#pf"), pp = $("#pProd") ? productPicker($("#pProd"), PRODUCTS, MAXP) : null;
+  const phoneBook = async st => { const org = $("#pOrg").value.trim(); if (!org) { toast("Байгууллагын нэрийг оруулна уу."); return; } const pr = pp ? pp.get() : {}; await setStatus(b, st, { org, tel: $("#pTel").value, person: $("#pPer").value, mail: $("#pMail").value, products: pr.products, other: pr.other }); phoneForm = false; };
   if (pf) { pf.onsubmit = e => { e.preventDefault(); phoneBook("held"); }; $("#pPaid").onclick = () => phoneBook("adv"); }
   const ad = $("#aDel"); if (ad) ad.onclick = () => { if (cancelArm !== "del") { cancelArm = "del"; info(); return; } cancelArm = null; push(); BOOTHS = BOOTHS.filter(x => x !== b); sel = null; changed(); render(); toast(b.code + " устгагдлаа. \"Хадгалах\" дарна уу."); };
   const aa = $("#aAdv"); if (aa) aa.onclick = () => setStatus(b, "adv");

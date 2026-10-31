@@ -91,3 +91,33 @@ function fitBooths(booths, frame, small) {
   const z = small ? Math.max(100, Math.min(320, Math.floor(10000 / span / 10) * 10)) : 100;
   return { zoom: z, scroll: () => { const pw = frame.firstElementChild.offsetWidth; frame.scrollLeft = Math.max(0, (x0 - 1.5) / 100 * pw); if (small) frame.scrollTop = Math.max(0, (y0 - 1.5) / 100 * frame.firstElementChild.offsetHeight); } };
 }
+
+/**
+ * Бүтээгдэхүүн сонгох товчнууд (олныг сонгоно, max хүртэл) + "Бусад" чөлөөт бичих талбар.
+ * items: [{i:'🧥', n:'Дээл, үндэсний хувцас'}]. Буцаах: { get() → {products:[], other:''} }
+ */
+function productPicker(el, items, max, onChange) {
+  max = max || 3;
+  const picked = [];
+  el.innerHTML = '<div class="chips pp-chips" role="group" aria-label="Бүтээгдэхүүн сонгох">' +
+    items.map((p, k) => '<button type="button" data-k="' + k + '" aria-pressed="false">' + esc((p.i ? p.i + " " : "") + p.n) + "</button>").join("") +
+    '<button type="button" data-k="other" aria-pressed="false">➕ Бусад</button></div>' +
+    '<input type="text" class="pp-other" maxlength="60" placeholder="Юу худалдахаа бичнэ үү" hidden style="margin-top:8px">';
+  const other = el.querySelector(".pp-other"), btnO = el.querySelector('[data-k="other"]');
+  el.querySelector(".chips").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.k === "other") {
+      const on = b.getAttribute("aria-pressed") !== "true";
+      b.setAttribute("aria-pressed", on); other.hidden = !on; if (on) other.focus(); else other.value = "";
+    } else {
+      const n = items[+b.dataset.k].n, i = picked.indexOf(n);
+      if (i >= 0) picked.splice(i, 1);
+      else if (picked.length >= max) { toast("Хамгийн ихдээ " + max + " төрөл сонгоно."); return; }
+      else picked.push(n);
+      b.setAttribute("aria-pressed", picked.indexOf(n) >= 0);
+    }
+    if (onChange) onChange();
+  };
+  other.oninput = () => { if (onChange) onChange(); };
+  return { get: () => ({ products: picked.slice(), other: btnO.getAttribute("aria-pressed") === "true" ? other.value.trim() : "" }) };
+}

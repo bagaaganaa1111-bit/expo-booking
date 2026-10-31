@@ -6,7 +6,7 @@
 <title>Лангуу захиалах</title>
 <meta name="description" content="Үзэсгэлэнгийн талбайн зургаас сул лангуугаа сонгож онлайнаар захиалаарай.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="wrap">
@@ -47,7 +47,7 @@
 <div id="toast" hidden></div>
 
 <script src="config.js"></script>
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 const EID = new URLSearchParams(location.search).get("e") || "";
 let D = null, sel = null, done = {}, filter = null, zoom = 100, busy = false;
@@ -158,20 +158,24 @@ function info() {
       '<label class="f">Хариуцах хүн<input id="fPer" type="text" autocomplete="name" placeholder="Б. Сараа"></label>' +
       '<label class="f">Утас *<input id="fTel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="99112233"><span class="err" id="eTel"></span></label>' +
       '<label class="f">Имэйл<input id="fMail" type="email" autocomplete="email" placeholder="info@company.mn"><span class="err" id="eMail"></span></label>' +
+      (D.products && D.products.length ? '<div class="f" style="grid-column:1/-1"><span>Юу худалдах вэ? * <span class="hint">(' + (D.maxProducts || 3) + ' хүртэл сонгоно)</span></span><div id="fProd"></div><span class="err" id="eProd"></span></div>' : "") +
       '<div class="row" style="grid-column:1/-1"><button class="btn pri" type="submit" id="fBtn">Захиалах</button><span class="hint">Урьдчилгаа ' + fmt(adv) + " ₮ · " + D.expo.holdHours + " цагийн дотор</span></div><span class=\"err\" id=\"eAll\" style=\"grid-column:1/-1\"></span></form>";
   } else h += '<p class="hint">Энэ лангуу ' + (b.status === "held" ? "түр барьцаалагдсан" : "захиалагдсан") + " байна. Ногоон хүрээтэй сул лангуунаас сонгоно уу.</p>";
   el.innerHTML = h; el.hidden = false;
   const f = $("#bf"); if (!f) return;
+  const pp = $("#fProd") ? productPicker($("#fProd"), D.products, D.maxProducts, () => { $("#eProd").textContent = ""; $("#eAll").textContent = ""; }) : null;
   ["fOrg", "fTel", "fMail"].forEach(k => { $("#" + k).oninput = () => { $("#e" + k.slice(1)).textContent = ""; $("#eAll").textContent = ""; }; });
   f.onsubmit = async e => {
     e.preventDefault(); if (busy) return;
     const org = $("#fOrg").value.trim(), tel = $("#fTel").value.replace(/[\s-]/g, ""), mail = $("#fMail").value.trim();
     const okTel = /^\d{8}$/.test(tel), okMail = !mail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail);
     $("#eOrg").textContent = org ? "" : "Байгууллагын нэрээ оруулна уу"; $("#eTel").textContent = okTel ? "" : "8 оронтой утасны дугаар оруулна уу"; $("#eMail").textContent = okMail ? "" : "Имэйл хаяг буруу байна";
-    if (!org || !okTel || !okMail) return;
+    const pr = pp ? pp.get() : { products: [], other: "" }, okProd = !pp || pr.products.length || pr.other;
+    if (pp) $("#eProd").textContent = okProd ? "" : "Юу худалдахаа сонгоно уу";
+    if (!org || !okTel || !okMail || !okProd) return;
     busy = true; $("#fBtn").disabled = true; $("#fBtn").textContent = "Илгээж байна…";
     try {
-      const r = await api("book", { e: EID, boothId: b.id, org, person: $("#fPer").value.trim(), tel, mail });
+      const r = await api("book", { e: EID, boothId: b.id, org, person: $("#fPer").value.trim(), tel, mail, products: pr.products, other: pr.other });
       done[b.id] = r.booking; store(MINE, JSON.stringify(done)); b.status = "held";
       renderPlan(); info();
     } catch (err) {

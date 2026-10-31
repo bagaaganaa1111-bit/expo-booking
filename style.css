@@ -122,3 +122,5 @@ td.mono{font-family:var(--mono)}
 }
 .lightbox{position:fixed;inset:0;z-index:50;background:rgba(10,12,18,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;cursor:zoom-out}
 .lightbox img{max-width:100%;max-height:calc(100vh - 90px);object-fit:contain;border-radius:8px}
+.chips.pp-chips{flex-wrap:wrap}
+@media (max-width:600px){.chips.pp-chips{flex-wrap:wrap;overflow-x:visible}}

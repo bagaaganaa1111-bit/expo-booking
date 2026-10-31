@@ -16,14 +16,22 @@
  * Анх суулгахдаа setup() функцийг нэг удаа ажиллуулна.
  */
 
-const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх' };
+const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх', PROD: 'Бүтээгдэхүүн', PART: 'Оролцоо', ORG: 'Оролцогчид' };
 const COLS = {
-  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about', 'posterId'],
+  'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about', 'posterId', 'template'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
-  'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy'],
+  'Лангуу': ['expoId', 'boothId', 'code', 'x', 'y', 'w', 'h', 'm2', 'catId', 'status', 'price', 'org', 'person', 'tel', 'mail', 'heldAt', 'updatedAt', 'updatedBy', 'products'],
   'Ажилтан': ['name', 'pin', 'role', 'active'],
-  'Түүх': ['time', 'expoId', 'code', 'action', 'by', 'detail']
+  'Түүх': ['time', 'expoId', 'code', 'action', 'by', 'detail'],
+  // Үзэсгэлэнгийн загвар бүрийн бүтээгдэхүүний жагсаалт. Менежер/захирал Sheets дээр шууд засна.
+  'Бүтээгдэхүүн': ['Үзэсгэлэн', 'Дүрс', 'Бүтээгдэхүүн', 'Салбар', 'Идэвхтэй'],
+  // Захиалга бүр нэг мөр (цуцлагдсан ч түүх нь үлдэнэ). Систем автоматаар бичнэ.
+  'Оролцоо': ['Үзэсгэлэн', 'Лангуу', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Төлөв', 'Дүн', 'Захиалсан', 'Шинэчилсэн', 'Бүртгэсэн', 'expoId', 'boothId'],
+  // Байгууллага бүр нэг мөр: бүх үзэсгэлэнгийн нэгдсэн сан. Систем автоматаар бичнэ.
+  'Оролцогчид': ['Түлхүүр', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Оролцсон үзэсгэлэн', 'Тоо', 'Анх бүртгэгдсэн', 'Сүүлд']
 };
+/** Гараар засах хүснэгтүүд (хамгаалалт тавихгүй). */
+const EDITABLE = { 'Бүтээгдэхүүн': 1 };
 const BOOKED = { held: 1, adv: 1, paid: 1 };
 const MAX_HOLDS_PER_PHONE = 3;
 const PALETTE = ['#2F6FE0', '#57C8E6', '#F2B84B', '#C98BD6', '#6E7F92', '#5BBE8A', '#E8846B'];
@@ -205,13 +213,14 @@ function priceOf_(b, cats) { return BOOKED[b.status] && num_(b.price) ? num_(b.p
 
 /** 48 цагт урьдчилгаа ороогүй түр захиалгыг суллана. Суллагдсан лангуунуудын жагсаалтыг буцаана. */
 function expireHolds_(expoFilter) {
-  const now = Date.now(), expos = {}, freed = [];
-  readAll_(SH.EXPO).forEach(e => { expos[e.id] = num_(e.holdHours, 48) || 48; });
+  const now = Date.now(), expos = {}, eobj = {}, freed = [];
+  readAll_(SH.EXPO).forEach(e => { expos[e.id] = num_(e.holdHours, 48) || 48; eobj[e.id] = e; });
   readAll_(SH.BOOTH).forEach(b => {
     if (b.status !== 'held' || (expoFilter && String(b.expoId) !== String(expoFilter))) return;
     const t = b.heldAt instanceof Date ? b.heldAt.getTime() : Date.parse(b.heldAt);
     if (!t || now - t < (expos[b.expoId] || 48) * 3600e3) return;
     freed.push({ expoId: b.expoId, code: b.code, org: b.org });
+    if (eobj[b.expoId]) partSave_(eobj[b.expoId], b, 'expired', 'систем');
     clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = 'систем';
     writeRow_(SH.BOOTH, b);
     log_(b.expoId, b.code, 'хугацаа дууссан', 'систем', '');
@@ -221,7 +230,97 @@ function expireHolds_(expoFilter) {
 }
 
 function clearBooking_(b) {
-  b.status = 'free'; b.price = ''; b.org = ''; b.person = ''; b.tel = ''; b.mail = ''; b.heldAt = '';
+  b.status = 'free'; b.price = ''; b.org = ''; b.person = ''; b.tel = ''; b.mail = ''; b.heldAt = ''; b.products = '';
+}
+
+/* ===================== Бүтээгдэхүүний загвар ===================== */
+
+const NO_ = { 'үгүй': 1, 'false': 1, 'no': 1, '0': 1 };
+/** Идэвхтэй бүтээгдэхүүнүүд, загвараар бүлэглэсэн: { 'Property Expo': [{i:'🏢', n:'Шинэ орон сууц'}] } */
+function productMap_() {
+  const m = {};
+  readAll_(SH.PROD).forEach(p => {
+    const t = str_(p['Үзэсгэлэн'], 120), n = str_(p['Бүтээгдэхүүн'], 80);
+    if (!t || !n || NO_[String(p['Идэвхтэй']).trim().toLowerCase()]) return;
+    (m[t] = m[t] || []).push({ i: str_(p['Дүрс'], 8), n });
+  });
+  return m;
+}
+function templates_() { return Object.keys(productMap_()); }
+function productsOf_(e) { return (e && e.template && productMap_()[String(e.template)]) || []; }
+
+/** Оролцогчийн сонгосон бүтээгдэхүүнийг шалгана: зөвхөн жагсаалтад байгаа нь, 3 хүртэл; "Бусад" чөлөөт текст. */
+const MAX_PRODUCTS = 3;
+function cleanProducts_(list, other, e) {
+  const allowed = {}; productsOf_(e).forEach(p => { allowed[p.n] = 1; });
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(x => { const n = str_(x, 80); if (allowed[n] && out.indexOf(n) < 0 && out.length < MAX_PRODUCTS) out.push(n); });
+  const o = str_(other, 60).replace(/\|/g, '/');
+  if (o) out.push('Бусад: ' + o);
+  return out.join(' | ');
+}
+
+/* ===================== Оролцогчдын сан (Оролцоо, Оролцогчид) ===================== */
+
+const PST = { held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн', free: 'Цуцлагдсан', expired: 'Хугацаа дууссан' };
+const PST_ICON = { 'Түр барьсан': '🟨', 'Урьдчилгаа төлсөн': '🟧', 'Бүрэн төлсөн': '🟥', 'Цуцлагдсан': '⬜', 'Хугацаа дууссан': '⏰' };
+const PACTIVE = { 'Түр барьсан': 1, 'Урьдчилгаа төлсөн': 1, 'Бүрэн төлсөн': 1 };
+
+function orgKey_(tel, org) {
+  tel = String(tel || '').replace(/\D/g, '');
+  return tel ? tel : 'нэр:' + String(org || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Лангууны захиалгын өөрчлөлтийг "Оролцоо" болон "Оролцогчид" хуудсанд бичнэ.
+ * st: held | adv | paid | free (цуцалсан) | expired. b нь цэвэрлэгдэхээс ӨМНӨХ мэдээлэлтэй байх ёстой.
+ * Алдаа гарсан ч захиалга зогсохгүй (зөвхөн систем админд мэдэгдэнэ).
+ */
+function partSave_(e, b, st, by) {
+  try {
+    if (!b || !b.org) return;
+    const now = new Date(), rows = readAll_(SH.PART);
+    const cur = rows.filter(r => String(r.expoId) === String(e.id) && String(r.boothId) === String(b.boothId) && PACTIVE[r['Төлөв']]).pop();
+    const ended = st === 'free' || st === 'expired';
+    if (cur) {
+      Object.assign(cur, { 'Төлөв': PST[st], 'Шинэчилсэн': now, 'Бүртгэсэн': by });
+      if (!ended) Object.assign(cur, { 'Байгууллага': b.org, 'Хариуцах хүн': b.person || '', 'Утас': tel_(b.tel), 'Имэйл': b.mail || '', 'Дүн': num_(b.price) || cur['Дүн'], 'Бүтээгдэхүүн': b.products || cur['Бүтээгдэхүүн'] });
+      writeRow_(SH.PART, cur);
+    } else if (!ended) {
+      appendRows_(SH.PART, [{ 'Үзэсгэлэн': String(e.name), 'Лангуу': String(b.code), 'Байгууллага': b.org, 'Хариуцах хүн': b.person || '', 'Утас': tel_(b.tel), 'Имэйл': b.mail || '',
+        'Бүтээгдэхүүн': b.products || '', 'Төлөв': PST[st], 'Дүн': num_(b.price), 'Захиалсан': now, 'Шинэчилсэн': now, 'Бүртгэсэн': by, expoId: e.id, boothId: b.boothId }]);
+    } else return;
+    orgSync_(orgKey_(b.tel, b.org));
+  } catch (err) { reportError_('оролцогчдын сан', err); }
+}
+/** Утсыг текстээр хадгална (эхний 0 болон урт тоо алдагдахгүй). */
+function tel_(t) { t = String(t || ''); return t ? "'" + t : ''; }
+
+/** Нэг байгууллагын нэгдсэн мөрийг Оролцоо хуудаснаас дахин тооцно. */
+function orgSync_(key) {
+  const mine = readAll_(SH.PART).filter(r => orgKey_(r['Утас'], r['Байгууллага']) === key);
+  if (!mine.length) return;
+  const last = mine[mine.length - 1], expos = [], prods = [];
+  mine.forEach(r => {
+    if (PACTIVE[r['Төлөв']] && expos.indexOf(String(r['Үзэсгэлэн'])) < 0) expos.push(String(r['Үзэсгэлэн']));
+    String(r['Бүтээгдэхүүн'] || '').split(' | ').forEach(p => { p = p.trim(); if (p && prods.indexOf(p) < 0) prods.push(p); });
+  });
+  const pick = k => { for (let i = mine.length - 1; i >= 0; i--) if (String(mine[i][k] || '').trim()) return mine[i][k]; return ''; };
+  const all = readAll_(SH.ORG), o = all.find(x => String(x['Түлхүүр']) === key);
+  const row = Object.assign(o || { 'Анх бүртгэгдсэн': mine[0]['Захиалсан'] || new Date() }, {
+    'Түлхүүр': "'" + key, 'Байгууллага': last['Байгууллага'], 'Хариуцах хүн': pick('Хариуцах хүн'), 'Утас': tel_(pick('Утас')), 'Имэйл': pick('Имэйл'),
+    'Бүтээгдэхүүн': prods.join(' | '), 'Оролцсон үзэсгэлэн': expos.join(' | '), 'Тоо': expos.length, 'Сүүлд': new Date()
+  });
+  if (o) writeRow_(SH.ORG, row); else appendRows_(SH.ORG, [row]);
+}
+
+/** Одоо байгаа захиалгуудыг сан руу нэг удаа хуулна (setup()-аас дуудагдана, давхардуулахгүй). */
+function backfillParts_() {
+  if (readAll_(SH.PART).length) return 0;
+  const expos = {}; readAll_(SH.EXPO).forEach(e => { expos[e.id] = e; });
+  let n = 0;
+  readAll_(SH.BOOTH).forEach(b => { if (BOOKED[b.status] && expos[b.expoId]) { partSave_(expos[b.expoId], b, b.status, String(b.updatedBy || 'систем')); n++; } });
+  return n;
 }
 
 /* ===================== Нийтийн (оролцогчийн) API ===================== */
@@ -252,6 +351,7 @@ function apiExpoRaw_(req) {
   const cats = catsOf_(e.id);
   return {
     expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || ''), place: String(e.place || ''), about: String(e.about || '') },
+    products: productsOf_(e), maxProducts: MAX_PRODUCTS,
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId,
@@ -283,9 +383,11 @@ function apiBook_(req) {
     if (b.status !== 'free') fail_('Уучлаарай, ' + b.code + ' лангууг сая өөр байгууллага захиаллаа. Өөр лангуу сонгоно уу.');
     if (booths.filter(x => x.status === 'held' && String(x.tel) === tel).length >= MAX_HOLDS_PER_PHONE)
       fail_('Нэг утасны дугаараар төлбөр төлөөгүй ' + MAX_HOLDS_PER_PHONE + '-аас олон лангуу барих боломжгүй. Менежертэй холбогдоно уу.');
-    const price = listPrice_(b, cats);
-    Object.assign(b, { status: 'held', price, org, person, tel, mail, heldAt: new Date(), updatedAt: new Date(), updatedBy: 'оролцогч' });
+    const price = listPrice_(b, cats), products = cleanProducts_(req.products, req.other, e);
+    if (productsOf_(e).length && !products) fail_('Юу худалдахаа сонгоно уу.');
+    Object.assign(b, { status: 'held', price, org, person, tel, mail, products, heldAt: new Date(), updatedAt: new Date(), updatedBy: 'оролцогч' });
     writeRow_(SH.BOOTH, b);
+    partSave_(e, b, 'held', 'оролцогч');
     log_(e.id, b.code, 'захиалсан', 'оролцогч', org + ' ' + tel);
     bump_(e);
     return { e, b, price };
@@ -334,6 +436,7 @@ function apiLogin_(req, who) { return { user: who }; }
 function apiExpos_() {
   const booths = readAll_(SH.BOOTH);
   return {
+    templates: templates_(),
     expos: readAll_(SH.EXPO).map(e => {
       const bs = booths.filter(b => String(b.expoId) === String(e.id));
       return { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), status: e.status || 'draft', slug: String(e.slug || ''), booths: bs.length, booked: bs.filter(b => BOOKED[b.status]).length, hasImage: !!e.imageId };
@@ -344,11 +447,18 @@ function apiExpos_() {
 function apiCreateExpo_(req, who) {
   const name = str_(req.name, 120);
   if (!name) fail_('Үзэсгэлэнгийн нэрийг оруулна уу.');
-  const id = uid_();
-  withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, place: str_(req.place, 120), start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
+  const id = uid_(), template = tpl_(req.template);
+  withLock_(() => { const slug = slug_(req.slug, id); appendRows_(SH.EXPO, [{ id, name, slug, template, place: str_(req.place, 120), start: str_(req.start, 20), end: str_(req.end, 20), status: 'draft', holdHours: 48, advancePct: 50, createdAt: new Date() }]); });
   log_(id, '', 'үзэсгэлэн үүсгэсэн', who.name, name);
   bump_(null);
   return { id };
+}
+
+/** Загварын нэрийг шалгана. Хоосон бол '' (бүтээгдэхүүн асуухгүй). */
+function tpl_(v) {
+  const t = str_(v, 120);
+  if (t && templates_().indexOf(t) < 0) fail_('"' + t + '" загвар олдсонгүй. Бүтээгдэхүүн хуудсыг шалгана уу.');
+  return t;
 }
 
 function apiUpdateExpo_(req, who) {
@@ -363,6 +473,7 @@ function apiUpdateExpo_(req, who) {
     if (req.place !== undefined) e.place = str_(req.place, 120);
     if (req.about !== undefined) e.about = str_(req.about, 600);
     if (req.payInfo !== undefined) e.payInfo = str_(req.payInfo, 200);
+    if (req.template !== undefined) e.template = tpl_(req.template);
     if (req.advancePct !== undefined) e.advancePct = Math.max(0, Math.min(100, num_(req.advancePct, 50)));
     if (req.status !== undefined) {
       if (!{ draft: 1, open: 1, closed: 1 }[req.status]) fail_('Төлөв буруу.');
@@ -387,11 +498,12 @@ function apiStaffExpo_(req) {
   if (boothsOf_(e.id).some(b => b.status === 'held')) withLock_(() => expireHolds_(e.id));
   const cats = catsOf_(e.id);
   return {
-    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), place: String(e.place || ''), about: String(e.about || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || ''), posterId: String(e.posterId || '') },
+    expo: { id: e.id, name: e.name, start: iso_(e.start), end: iso_(e.end), imageId: e.imageId, imgW: e.imgW, imgH: e.imgH, status: e.status || 'draft', slug: String(e.slug || ''), place: String(e.place || ''), about: String(e.about || ''), holdHours: e.holdHours, advancePct: e.advancePct, payInfo: String(e.payInfo || ''), posterId: String(e.posterId || ''), template: String(e.template || '') },
+    products: productsOf_(e), templates: templates_(), maxProducts: MAX_PRODUCTS,
     cats: cats.map(c => ({ id: c.catId, name: c.name, color: c.color, price: num_(c.price) })),
     booths: boothsOf_(e.id).map(b => ({
       id: b.boothId, code: String(b.code), x: num_(b.x), y: num_(b.y), w: num_(b.w), h: num_(b.h), m2: num_(b.m2), cat: b.catId, status: b.status || 'free',
-      price: priceOf_(b, cats), org: b.org, person: b.person, tel: String(b.tel || ''), mail: b.mail,
+      price: priceOf_(b, cats), org: b.org, person: b.person, tel: String(b.tel || ''), mail: b.mail, products: String(b.products || ''),
       heldAt: b.heldAt instanceof Date ? b.heldAt.getTime() : (Date.parse(b.heldAt) || null), updatedBy: b.updatedBy
     })),
     now: Date.now(), layoutVer: layoutVer_(cats, boothsOf_(e.id))
@@ -584,18 +696,19 @@ function changeStatus_(req, who) {
     if (req.expect && String(req.expect) !== prev) fail_(b.code + ' лангууны төлөвийг сая өөр хүн өөрчилсөн байна (одоо: ' + ({ free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' }[prev]) + '). Мэдээлэл шинэчлэгдлээ, дахин шалгана уу.');
     if (st === 'free') {
       if (prev === 'free') return { e, b, prev, same: true };
-      const org = b.org; clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = who.name; writeRow_(SH.BOOTH, b);
+      const org = b.org; partSave_(e, b, 'free', who.name); clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = who.name; writeRow_(SH.BOOTH, b);
       log_(e.id, b.code, 'цуцалсан', who.name, org); return { e, b, prev, org };
     }
     if (prev === 'free') {
       const org = str_(req.org, 120), tel = str_(req.tel, 20).replace(/[\s-]/g, '');
       if (!org) fail_('Байгууллагын нэрийг оруулна уу.');
       if (tel && !/^\d{8}$/.test(tel)) fail_('Утасны дугаар 8 оронтой байх ёстой.');
-      Object.assign(b, { org, person: str_(req.person, 80), tel, mail: str_(req.mail, 120), price: listPrice_(b, cats) });
+      Object.assign(b, { org, person: str_(req.person, 80), tel, mail: str_(req.mail, 120), price: listPrice_(b, cats), products: cleanProducts_(req.products, req.other, e) });
       if (st === 'held') b.heldAt = new Date();
     }
     b.status = st; if (st !== 'held') b.heldAt = b.heldAt || '';
     b.updatedAt = new Date(); b.updatedBy = who.name; writeRow_(SH.BOOTH, b);
+    partSave_(e, b, st, who.name);
     log_(e.id, b.code, { held: 'түр барьсан', adv: 'урьдчилгаа орсон', paid: 'бүрэн төлсөн' }[st], who.name, b.org);
     return { e, b, prev };
   });
@@ -732,12 +845,40 @@ function dailyReportRaw_() {
 
 /* ===================== Анхны тохиргоо ===================== */
 
+/** Анхны бүтээгдэхүүний жагсаалт (Бүтээгдэхүүн хуудас хоосон үед setup() нэг удаа бичнэ). */
+const SEED_SECTORS = {"food": "Хүнс, бэлэг, үндэсний бүтээгдэхүүн", "build": "Барилга, үл хөдлөх, интерьер", "fashion": "Үнэт эдлэл, гоо сайхан, хувцас загвар", "travel": "Аялал, спорт, гадаа амралт", "health": "Эрүүл мэнд, эм, тоног төхөөрөмж", "auto": "Авто, сэлбэг, засвар үйлчилгээ", "fin": "Банк, даатгал, санхүү", "tech": "Технологи, харилцаа холбоо", "other": "Бусад үйлчилгээ"};
+const SEED_PRODUCTS = [
+  ["11.11 BAZAAR EXPO", [["👗", "Хувцас, гутал", "fashion"], ["🐐", "Ноос, ноолуур, арьс шир", "fashion"], ["💄", "Гоо сайхан, арьс арчилгаа", "fashion"], ["💍", "Үнэт эдлэл, цаг, гоёл чимэглэл", "fashion"], ["🥫", "Хүнс, ундаа", "food"], ["🏠", "Гэр ахуй, сав суулга", "build"], ["🛋️", "Тавилга, интерьер", "build"], ["📱", "Цахилгаан бараа, гар утас", "tech"], ["🧸", "Хүүхдийн бараа, тоглоом", "other"], ["⚽", "Спорт, аялал", "travel"], ["🎁", "Бэлэг, гар урлал", "food"], ["💊", "Эрүүл мэнд, нэмэлт тэжээл", "health"]]],
+  ["Монгол өв соёл — Цагаан сар", [["🧥", "Дээл, үндэсний хувцас", "fashion"], ["🐐", "Ноос, ноолуур, арьс шир", "fashion"], ["🥟", "Мах, бууз банш, махан бүтээгдэхүүн", "food"], ["🍰", "Ул боов, чихэр, амттан", "food"], ["🥛", "Сүү, цагаан идээ", "food"], ["🍶", "Ундаа, архи, дарс", "food"], ["🎁", "Бэлэг, бэлгийн багц", "food"], ["💍", "Үнэт эдлэл, мөнгөн аяга, хөөрөг", "fashion"], ["🎨", "Гар урлал, урлагийн бүтээл", "food"], ["💄", "Гоо сайхан, арьс арчилгаа", "fashion"], ["🏠", "Гэр ахуй, сав суулга", "build"], ["📅", "Хуанли, ном, зурхай", "other"]]],
+  ["Property Expo", [["🏢", "Шинэ орон сууц", "build"], ["🏡", "Хаус, зуслан", "build"], ["🏦", "Ипотек, банкны зээл", "fin"], ["🤝", "Үл хөдлөхийн агент", "build"], ["🛋️", "Интерьер, тавилга", "build"], ["🧱", "Барилгын материал", "build"], ["🚪", "Цонх, хаалга", "build"], ["🔥", "Халаалт, сантехник, цахилгаан", "build"], ["📹", "Ухаалаг гэр, хамгаалалтын камер", "tech"], ["🛡️", "Даатгал", "fin"]]],
+  ["Mongolia Jewellery Expo", [["🥇", "Алтан эдлэл", "fashion"], ["🥈", "Мөнгөн эдлэл", "fashion"], ["💎", "Үнэт чулуу", "fashion"], ["💍", "Сүйн, хуримын бөгж", "fashion"], ["✋", "Гар хийцийн чимэглэл", "fashion"], ["🏺", "Үндэсний чимэглэл, хөөрөг", "fashion"], ["⌚", "Цаг", "fashion"], ["🔍", "Сорьцын баталгаа, үнэлгээ", "other"], ["🔧", "Засвар, арчилгаа", "other"]]],
+  ["Summer & Travel Expo", [["⛺", "Майхан, кемпинг", "travel"], ["👟", "Спорт хувцас, гутал", "travel"], ["🚲", "Дугуй, скүүтер", "travel"], ["🎣", "Загас агнуур, ан", "travel"], ["🏄", "Усан спорт", "travel"], ["✈️", "Аялал жуулчлалын компани", "travel"], ["🏕️", "Амралтын газар", "travel"], ["🛡️", "Аяллын даатгал", "fin"], ["☀️", "Нарнаас хамгаалах, гоо сайхан", "fashion"]]],
+  ["National Naadam Expo", [["🧥", "Үндэсний хувцас", "fashion"], ["🐐", "Ноос, ноолуур", "fashion"], ["🎁", "Бэлэг дурсгал, гар урлал", "food"], ["🥟", "Хуушуур, хоол хүнс", "food"], ["🥛", "Айраг, ундаа", "food"], ["💍", "Үнэт эдлэл", "fashion"], ["🐎", "Морины хэрэгсэл", "other"], ["🤼", "Үндэсний спорт", "travel"], ["✈️", "Аялал жуулчлал", "travel"]]],
+  ["Mongolia Health Technology Expo", [["🏥", "Эмнэлэг", "health"], ["💊", "Эм, эмийн сан", "health"], ["🩺", "Эмнэлгийн тоног төхөөрөмж", "health"], ["🦷", "Шүдний эмнэлэг", "health"], ["👓", "Нүдний эмнэлэг, шил", "health"], ["🧪", "Лаборатори", "health"], ["🌿", "Уламжлалт анагаах ухаан", "health"], ["💪", "Нэмэлт тэжээл", "health"], ["✨", "Гоо сайхны эмнэлэг", "health"], ["🤖", "Цахим эрүүл мэнд, AI", "tech"], ["🛡️", "Эрүүл мэндийн даатгал", "fin"]]],
+  ["Mongolia Auto Aftermarket", [["⚙️", "Сэлбэг", "auto"], ["🛞", "Дугуй", "auto"], ["🛢️", "Тос, шингэн", "auto"], ["🔋", "Аккумлятор", "auto"], ["🔧", "Засварын төв", "auto"], ["🧽", "Угаалга, химчлэл", "auto"], ["📡", "Камер, GPS, электроник", "tech"], ["🏁", "Дагалдах хэрэгсэл, тюнинг", "auto"], ["❄️", "Өвлийн бэлтгэл (халаагуур, гинж)", "auto"], ["🛡️", "Даатгал", "fin"], ["🏦", "Лизинг, зээл", "fin"]]]
+];
+
+function seedProducts_() {
+  if (readAll_(SH.PROD).length) return 0;
+  const rows = [];
+  SEED_PRODUCTS.forEach(t => t[1].forEach(p => rows.push({ 'Үзэсгэлэн': t[0], 'Дүрс': p[0], 'Бүтээгдэхүүн': p[1], 'Салбар': SEED_SECTORS[p[2]] || '', 'Идэвхтэй': 'Тийм' })));
+  appendRows_(SH.PROD, rows);
+  const sh = sheet_(SH.PROD);
+  try {
+    sh.getRange('E2:E1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Тийм', 'Үгүй'], true).setAllowInvalid(false).build());
+    sh.getRange('D2:D1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(Object.keys(SEED_SECTORS).map(k => SEED_SECTORS[k]), true).build());
+    sh.setColumnWidth(1, 240); sh.setColumnWidth(3, 260); sh.setColumnWidth(4, 260);
+  } catch (e) {}
+  return rows.length;
+}
+
 function setup() {
   Object.keys(COLS).forEach(name => {
     const sh = sheet_(name);
     // Багана нэмэгдсэн бол гарчгийн мөрийг шинэчилнэ (шинэ багана үргэлж төгсгөлд нэмэгддэг)
     sh.getRange(1, 1, 1, COLS[name].length).setValues([COLS[name]]).setFontWeight('bold');
     // Хүснэгтийг гараар засахаас хамгаална: зөвхөн эзэмшигч засна, систем хэвийн бичнэ
+    if (EDITABLE[name]) { sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(p => p.remove()); return; }
     try {
       const old = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
       const p = old.length ? old[0] : sh.protect();
@@ -749,6 +890,8 @@ function setup() {
   const def = ss_().getSheetByName('Sheet1') || ss_().getSheetByName('Хуудас1');
   if (def && ss_().getSheets().length > 1 && def.getLastRow() === 0) ss_().deleteSheet(def);
   folder_();
+  const np = seedProducts_(); if (np) console.log('Бүтээгдэхүүн хуудсанд ' + np + ' мөр бичлээ (8 үзэсгэлэнгийн загвар).');
+  const nb = backfillParts_(); if (nb) console.log('Одоо байгаа ' + nb + ' захиалгыг Оролцоо, Оролцогчид хуудсанд хуулав.');
   const staff = readAll_(SH.STAFF);
   if (!staff.length) {
     const pin = prop_('ADMIN_PIN') || String(Math.floor(100000 + Math.random() * 900000));
@@ -809,7 +952,7 @@ function telegramChats() {
 const WEB_URL = 'https://script.google.com/macros/s/AKfycbyIG0JUpqjVomlhgLR0aTFaDAyPsaseZGvfSR2GGjVZZtlDsAazwHS74kNfuEQPjfuE/exec';
 const ST_NAME = { free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' };
 const ST_ICON = { free: '⬜', held: '🟨', adv: '🟧', paid: '🟥' };
-const TG_MENU = [['📊 Өнөөдрийн байдал', 'status'], ['💰 Авлага', 'due'], ['⏰ Хугацаа дуусах', 'soon'], ['🔎 Хайх', 'find']];
+const TG_MENU = [['📊 Өнөөдрийн байдал', 'status'], ['💰 Авлага', 'due'], ['⏰ Хугацаа дуусах', 'soon'], ['🔎 Хайх', 'find'], ['🗂 Оролцогчид', 'orgs']];
 
 function tg_(method, payload) {
   const token = prop_('TELEGRAM_TOKEN');
@@ -830,7 +973,8 @@ function tgEdit_(msg, text, kb) {
 const PAGES_URL = 'https://bagaaganaa1111-bit.github.io/expo-booking/';
 function tgMenuKb_() {
   const web = prop_('PAGES_URL') || PAGES_URL;
-  return [TG_MENU.slice(0, 2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), TG_MENU.slice(2).map(m => ({ text: m[0], callback_data: 'm|' + m[1] })), [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
+  const b = m => ({ text: m[0], callback_data: 'm|' + m[1] });
+  return [TG_MENU.slice(0, 2).map(b), TG_MENU.slice(2, 4).map(b), [b(TG_MENU[4])], [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
 }
 function hhmm_(d) { return Utilities.formatDate(d || new Date(), Session.getScriptTimeZone(), 'HH:mm'); }
 
@@ -917,6 +1061,7 @@ function tgMenuDo_(what, who, from, replyTo) {
   if (what === 'status') return tgStatus_(who);
   if (what === 'due') return tgDue_(who);
   if (what === 'soon') return tgSoon_(who);
+  if (what === 'orgs') return tgOrgs_(who, null, ['o', '0']);
   if (what === 'find') {
     CacheService.getScriptCache().put('tgf_' + who.chat + '_' + (from && from.id), '1', 600);
     return tgSend_(who.chat, '🔎 Утасны дугаар эсвэл байгууллагын нэрийг бичээд илгээнэ үү.', { force_reply: true, selective: true, input_field_placeholder: '99112233 эсвэл Номин' },
@@ -985,6 +1130,79 @@ function tgFind_(who, q) {
   found.slice(0, 10).forEach(x => tgSend_(who.chat, tgCard_(x.d.e, x.b, x.d.cats), { inline_keyboard: x.d.e.status === 'open' ? tgButtons_(x.d.e, x.b) : [] }));
 }
 
+/* ---------- 🗂 Оролцогчид: үзэсгэлэн → бүтээгдэхүүн → төлөв → жагсаалт ---------- */
+/*
+ * callback_data: o|0                — эхлэл (үзэсгэлэн сонгох)
+ *                o|e|<expoId|*>      — бүтээгдэхүүн сонгох
+ *                o|p|<expo>|<i|*>    — төлөв сонгох
+ *                o|r|<expo>|<i|*>|<төлөв> — үр дүн
+ */
+const OF = { act: ['📋 Идэвхтэй бүгд', PACTIVE], pay: ['✅ Төлбөртэй', { 'Урьдчилгаа төлсөн': 1, 'Бүрэн төлсөн': 1 }], due: ['⏳ Төлбөр дутуу', { 'Түр барьсан': 1, 'Урьдчилгаа төлсөн': 1 }], off: ['❌ Цуцлагдсан, дууссан', { 'Цуцлагдсан': 1, 'Хугацаа дууссан': 1 }] };
+
+/** Шүүлтийн бүтээгдэхүүний жагсаалт: загварын дарааллаар, дараа нь захиалгад байгаа бусад нь. */
+function orgProdList_(expoId, rows, expos) {
+  const e = expos.find(x => String(x.id) === String(expoId)), list = e ? productsOf_(e).map(p => p.n) : [];
+  const extra = {};
+  rows.filter(r => expoId === '*' || String(r.expoId) === String(expoId)).forEach(r => String(r['Бүтээгдэхүүн'] || '').split(' | ').forEach(p => {
+    p = p.trim(); if (p && !/^Бусад:/.test(p) && list.indexOf(p) < 0) extra[p] = (extra[p] || 0) + 1;
+  }));
+  return list.concat(Object.keys(extra).sort((a, b) => extra[b] - extra[a] || a.localeCompare(b))).slice(0, 16);
+}
+
+function tgOrgs_(who, msg, a) {
+  const step = a[1] || '0', X = a[2] || '*', P = a[3] || '*', S = a[4] || 'act';
+  const rows = readAll_(SH.PART), expos = readAll_(SH.EXPO).reverse();
+  const show = (text, kb) => msg ? tgEdit_(msg, text, kb) : tgSend_(who.chat, text, { inline_keyboard: kb });
+  const ename = id => id === '*' ? 'Бүх үзэсгэлэн' : String((expos.find(e => String(e.id) === String(id)) || {}).name || '—');
+  const pairs = btns => btns.reduce((acc, b, i) => { if (i % 2) acc[acc.length - 1].push(b); else acc.push([b]); return acc; }, []);
+  const cut = (t, n) => (t = String(t)).length > n ? t.slice(0, n - 1) + '…' : t;
+  const home = { text: '🏠 Эхнээс', callback_data: 'o|0' };
+
+  if (step === '0') {
+    const has = {}; rows.forEach(r => { has[r.expoId] = 1; });
+    const list = expos.filter(e => has[e.id]).slice(0, 12);
+    if (!list.length) return show('🗂 Оролцогчдын сан хоосон байна.\nЗахиалга орж ирэхэд энд автоматаар бүртгэгдэнэ.', tgMenuKb_());
+    return show('🗂 Оролцогчид\nҮзэсгэлэнгээ сонгоно уу:', pairs(list.map(e => ({ text: cut(e.name, 30), callback_data: 'o|e|' + e.id }))).concat([[{ text: '🌐 Бүх үзэсгэлэн', callback_data: 'o|e|*' }]]));
+  }
+  const prods = orgProdList_(X, rows, expos);
+  const pname = P === '*' ? 'Бүх бүтээгдэхүүн' : (prods[Number(P)] || '—');
+  if (step === 'e') {
+    const kb = pairs(prods.map((p, i) => ({ text: cut(p, 28), callback_data: 'o|p|' + X + '|' + i })));
+    kb.unshift([{ text: '📦 Бүх бүтээгдэхүүн', callback_data: 'o|p|' + X + '|*' }]);
+    kb.push([{ text: '↩️ Буцах', callback_data: 'o|0' }]);
+    return show('🗂 ' + ename(X) + '\nБүтээгдэхүүнээр шүүх:', kb);
+  }
+  if (step === 'p') {
+    const kb = pairs(Object.keys(OF).map(k => ({ text: OF[k][0], callback_data: ['o', 'r', X, P, k].join('|') })));
+    kb.push([{ text: '↩️ Буцах', callback_data: 'o|e|' + X }, home]);
+    return show('🗂 ' + ename(X) + ' · ' + pname + '\nТөлөвөөр шүүх:', kb);
+  }
+  // step 'r' — үр дүн
+  const okSt = (OF[S] || OF.act)[1];
+  const found = rows.filter(r => (X === '*' || String(r.expoId) === String(X)) && okSt[r['Төлөв']] &&
+    (P === '*' || String(r['Бүтээгдэхүүн'] || '').split(' | ').map(x => x.trim()).indexOf(pname) >= 0));
+  found.sort((p, q) => String(p['Үзэсгэлэн']).localeCompare(String(q['Үзэсгэлэн'])) || String(p['Лангуу']).localeCompare(String(q['Лангуу']), undefined, { numeric: true }));
+  const orgs = {}; found.forEach(r => { orgs[orgKey_(r['Утас'], r['Байгууллага'])] = 1; });
+  // Мөнгөн дүн зөвхөн захиралд: "Төлбөр дутуу" бол үлдэгдэл, бусад үед нийт дүн; цуцлагдсанд харуулахгүй
+  const adv = {}; expos.forEach(e => { adv[e.id] = (num_(e.advancePct, 50) || 50) / 100; });
+  const owe = r => r['Төлөв'] === 'Түр барьсан' ? num_(r['Дүн']) : r['Төлөв'] === 'Урьдчилгаа төлсөн' ? Math.round(num_(r['Дүн']) * (1 - (adv[r.expoId] || 0.5))) : 0;
+  const boss = who.role === 'admin', sum = found.reduce((t, r) => t + (S === 'due' ? owe(r) : num_(r['Дүн'])), 0);
+  const money = boss && found.length && S !== 'off' ? ' · ' + (S === 'due' ? 'үлдэгдэл ' : '') + fmt_(sum) + '₮' : '';
+  const head = '🗂 ' + ename(X) + ' · ' + pname + ' · ' + (OF[S] || OF.act)[0] + '\n' + found.length + ' лангуу, ' + Object.keys(orgs).length + ' байгууллага' + money;
+  const kb = [[{ text: '🔁 Шүүлт солих', callback_data: 'o|p|' + X + '|' + P }, home]];
+  if (!found.length) return show(head + '\n\nИйм оролцогч олдсонгүй.', kb);
+  let text = head, group = '';
+  for (let i = 0; i < found.length; i++) {
+    const r = found[i];
+    let line = '';
+    if (X === '*' && r['Үзэсгэлэн'] !== group) { group = r['Үзэсгэлэн']; line += '\n🏢 ' + group; }
+    line += '\n' + (PST_ICON[r['Төлөв']] || '•') + ' ' + r['Лангуу'] + ' ' + r['Байгууллага'] + (r['Утас'] ? ' · ' + r['Утас'] : '') + (P === '*' && r['Бүтээгдэхүүн'] ? '\n      ' + cut(r['Бүтээгдэхүүн'], 60) : '');
+    if (text.length + line.length > 3700) { text += '\n\n…үлдсэн ' + (found.length - i) + ' мөр. Бүтэн жагсаалт: Google Sheets → "Оролцоо" хуудас.'; break; }
+    text += (i === 0 ? '\n' : '') + line;
+  }
+  return show(text, kb);
+}
+
 function tgCallback_(q) {
   const msg = q.message || {}, who = tgWho_(msg.chat && msg.chat.id, q.from);
   const ans = (text, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: text || '', show_alert: !!alert });
@@ -994,6 +1212,7 @@ function tgCallback_(q) {
   // Товчны эргэлдэх тэмдгийг шууд зогсооно: хүн хүлээхгүй, ажил ард нь хийгдэнэ
   ans(mark ? mark + '…' : '');
   if (act === 'm') return tgMenuDo_(expoId, who, q.from, null);
+  if (act === 'o') return tgOrgs_(who, msg, String(q.data || '').split('|'));
   const kb = (rows) => tg_('editMessageReplyMarkup', { chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: rows } });
   const k = (t, a) => ({ text: t, callback_data: [a, expoId, boothId, expect].join('|') });
   if (act === 'ask') return kb([[k('❗ Тийм, цуцлах', 'free'), k('↩️ Үгүй', 'no')]]);
@@ -1056,7 +1275,8 @@ function tgConnect() {
     { command: 'status', description: 'Өнөөдрийн байдал' },
     { command: 'due', description: 'Авлага' },
     { command: 'soon', description: '24 цагт суллагдах лангуу' },
-    { command: 'find', description: 'Утас, нэрээр хайх' }
+    { command: 'find', description: 'Утас, нэрээр хайх' },
+    { command: 'orgs', description: 'Оролцогчид — шүүж харах' }
   ] });
   ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
     const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });

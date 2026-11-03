@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Үзэсгэлэнгийн хямдрал бүртгүүлэх</title>
+<meta name="description" content="Оролцогч байгууллага үзэсгэлэнгийн өдрүүдийн хямдралаа бүртгүүлж, сошиал сувгаар үнэгүй сурталчлуулна.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<main class="wrap" style="max-width:620px">
+  <header>
+    <p class="eyebrow" id="org">Сая Мөнх</p>
+    <h1>🎁 Хямдралаа бүртгүүлэх</h1>
+    <p class="lead">Үзэсгэлэнгийн өдрүүдэд зарлах хямдралаа бичвэл бид Facebook, Telegram, Viber сувгуудаараа үнэгүй сурталчилна.</p>
+  </header>
+
+  <form class="card" id="f1" novalidate>
+    <label class="f">Захиалга өгөхдөө бичсэн утасны дугаар<input id="tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="99112233"></label>
+    <p class="err" id="e1" role="alert"></p>
+    <div><button class="btn pri" id="b1" type="submit">Үргэлжлүүлэх</button></div>
+  </form>
+
+  <form class="card" id="f2" hidden novalidate>
+    <div><b id="who"></b><p class="hint" id="booths"></p></div>
+    <label class="f">Таны хямдрал (1 мөр)<textarea id="promo" rows="3" maxlength="150" placeholder="Жишээ: Ноолуурын цамц 30% хямд, 2 авбал 1 бэлэг" style="font:15px var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;resize:vertical"></textarea></label>
+    <p class="hint"><span id="cnt">0</span>/150 · Бараа, хямдралын хувь эсвэл үнийг тодорхой бичвэл илүү олон хүн ирнэ.</p>
+    <p class="err" id="e2" role="alert"></p>
+    <div class="row"><button class="btn pri" id="b2" type="submit">Хадгалах</button><button class="link" type="button" id="back">Өөр дугаар</button></div>
+  </form>
+
+  <div class="card" id="done" hidden>
+    <div class="ok"><strong>Баярлалаа! Хямдрал тань бүртгэгдлээ.</strong><p class="hint" style="margin-top:4px">Бид үзэсгэлэнгийн постуудад танай хямдралыг оруулна. Өөрчлөх бол энэ хуудсаар дахин ороход болно.</p></div>
+    <div><button class="btn" type="button" id="edit">Засах</button></div>
+  </div>
+</main>
+<div id="toast" hidden></div>
+<script src="config.js"></script>
+<script src="common.js?v=4"></script>
+<script>
+const E = new URLSearchParams(location.search).get("e") || "";
+let TEL = "";
+if (window.EXPO_ORG) $("#org").textContent = window.EXPO_ORG;
+if (!E) { $("#f1").innerHTML = '<p class="err">Холбоос дутуу байна. Зохион байгуулагчаас ирсэн холбоосыг ашиглана уу.</p>'; }
+$("#promo").oninput = () => { $("#cnt").textContent = $("#promo").value.length; $("#e2").textContent = ""; };
+$("#tel").oninput = () => { $("#e1").textContent = ""; };
+$("#f1").onsubmit = async e => {
+  e.preventDefault();
+  const tel = $("#tel").value.replace(/[\s-]/g, "");
+  if (!/^\d{8}$/.test(tel)) { $("#e1").textContent = "8 оронтой утасны дугаар оруулна уу."; return; }
+  $("#b1").disabled = true; $("#b1").textContent = "Шалгаж байна…";
+  try {
+    const r = await api("promoFind", { e: E, tel });
+    TEL = tel;
+    $("#who").textContent = r.org + " · " + r.expo;
+    $("#booths").textContent = "Лангуу: " + r.booths.join(", ");
+    $("#promo").value = r.promo || ""; $("#cnt").textContent = $("#promo").value.length;
+    $("#f1").hidden = true; $("#f2").hidden = false; $("#promo").focus();
+  } catch (err) { $("#e1").textContent = err.message; }
+  finally { $("#b1").disabled = false; $("#b1").textContent = "Үргэлжлүүлэх"; }
+};
+$("#f2").onsubmit = async e => {
+  e.preventDefault();
+  const promo = $("#promo").value.trim();
+  if (promo.length < 3) { $("#e2").textContent = "Хямдралаа бичнэ үү."; return; }
+  $("#b2").disabled = true; $("#b2").textContent = "Хадгалж байна…";
+  try { await api("promoSave", { e: E, tel: TEL, promo }); $("#f2").hidden = true; $("#done").hidden = false; }
+  catch (err) { $("#e2").textContent = err.message; }
+  finally { $("#b2").disabled = false; $("#b2").textContent = "Хадгалах"; }
+};
+$("#back").onclick = () => { $("#f2").hidden = true; $("#f1").hidden = false; $("#tel").focus(); };
+$("#edit").onclick = () => { $("#done").hidden = true; $("#f2").hidden = false; };
+</script>
+</body>
+</html>

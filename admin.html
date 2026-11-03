@@ -131,6 +131,10 @@
         <label class="f">Байршил<input id="sPlace" type="text" placeholder="Урангаан — UG Expo"></label>
         <label class="f">Бүтээгдэхүүний жагсаалт<select id="sTpl"><option value="">— Асуухгүй —</option></select></label>
         <label class="f" style="grid-column:1/-1">Товч тайлбар (нүүр хуудсанд харагдана)<textarea id="sAbout" rows="3" maxlength="600" placeholder="Монгол өв соёл, гар урлал, үндэсний үйлдвэрлэлийн Цагаан сарын худалдаа-үзэсгэлэн" style="font:15px var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;resize:vertical"></textarea></label>
+        <label class="f">Нээлттэй цаг (постод)<input id="sHours" type="text" placeholder="10:00–20:00"></label>
+        <label class="f">Орох хураамж (постод)<input id="sFee" type="text" placeholder="Үнэгүй"></label>
+        <label class="f">Холбоо барих утас (постод)<input id="sPhone" type="tel" placeholder="9911 2233"></label>
+        <label class="f">Зогсоол, хүрэх зам (постод)<input id="sParking" type="text" placeholder="Үнэгүй зогсоолтой"></label>
         <label class="f" style="grid-column:1/-1">Төлбөр төлөх данс (оролцогч захиалсны дараа харна)<input id="sPay" type="text" placeholder="Хаан банк 5012345678, Идэр дөрвөн улирал ХХК"></label>
         <div class="row" style="align-self:end"><button class="btn" type="submit">Тохиргоо хадгалах</button></div>
       </form>
@@ -242,12 +246,13 @@ function render() {
     : "Лангуу тэмдэглэгдээгүй байна. \"Дахин таниулах\" дарах эсвэл доорх зураг дээр гараар нэмнэ үү.";
   $("#cPlan").hidden = !hasImg; $("#cCats").hidden = !hasImg || !hasB; $("#cBook").hidden = !hasB;
   const a = [];
-  if (EXPO.status === "open") a.push('<button class="btn" id="copyLink">Оролцогчийн холбоос хуулах</button>' + (BOSS() ? '<button class="btn warn" id="closeBtn">Захиалга хаах</button>' : ""));
+  if (EXPO.status === "open") a.push('<button class="btn" id="copyLink">Оролцогчийн холбоос хуулах</button><button class="btn" id="copyPromo">🎁 Хямдрал цуглуулах холбоос</button>' + (BOSS() ? '<button class="btn warn" id="closeBtn">Захиалга хаах</button>' : ""));
   else if (BOSS()) a.push('<button class="btn pri" id="openBtn"' + (hasB ? "" : " disabled") + '>Захиалга нээх</button>');
   $("#eActions").innerHTML = a.join("");
   const ob = $("#openBtn"); if (ob) ob.onclick = () => setExpoStatus("open");
   const cb = $("#closeBtn"); if (cb) cb.onclick = () => { if (cb.dataset.arm) setExpoStatus("closed"); else { cb.dataset.arm = 1; cb.textContent = "Дахин дарж хаахыг батална"; } };
   const cl = $("#copyLink"); if (cl) cl.onclick = copyLink;
+  const cp = $("#copyPromo"); if (cp) cp.onclick = async () => { const u = pubLink().replace(/\?e=/, "promo.html?e="); try { await navigator.clipboard.writeText(u); toast("Хуулагдлаа. Оролцогчдод илгээвэл тэд үзэсгэлэнгийн хямдралаа бүртгүүлнэ.", 5000); } catch (e) { toast(u, 8000); } };
   const note = $("#eNote");
   if (EXPO.status !== "open" && hasB && !BOSS()) { note.hidden = false; note.textContent = "Лангуунуудыг шалгаж \"Хадгалах\" дарна уу. Үнэ тогтоож, захиалга нээх ажлыг захирал хийнэ."; }
   else if (EXPO.status !== "open" && hasB) { note.hidden = false; note.textContent = "Лангуу, үнийг шалгаж \"Хадгалах\" дарсны дараа \"Захиалга нээх\" товчоор оролцогчдод нээнэ." + (EXPO.payInfo ? "" : " Доорх тохиргоонд төлбөрийн дансаа оруулахаа мартуузай."); }
@@ -256,6 +261,7 @@ function render() {
   // Тохиргоог засаж байх үед (хадгалаагүй) автомат шинэчлэлт тэдгээрийг дарж бичихгүй
   if (!SET_EDIT) {
     $("#sName").value = EXPO.name; $("#sSlug").value = EXPO.slug || ""; $("#sPlace").value = EXPO.place || ""; $("#sAbout").value = EXPO.about || ""; $("#sStart").value = EXPO.start || ""; $("#sEnd").value = EXPO.end || ""; $("#sHold").value = EXPO.holdHours; $("#sAdv").value = EXPO.advancePct; $("#sPay").value = EXPO.payInfo || "";
+    $("#sHours").value = EXPO.hours || ""; $("#sFee").value = EXPO.fee || ""; $("#sPhone").value = EXPO.phone || ""; $("#sParking").value = EXPO.parking || "";
     tplOptions($("#sTpl"), TEMPLATES, EXPO.template || "");
   }
   showPosterBox();
@@ -274,7 +280,7 @@ let SET_EDIT = false;
 ["input", "change"].forEach(ev => $("#setForm").addEventListener(ev, () => { SET_EDIT = true; }));
 $("#setForm").onsubmit = async e => {
   e.preventDefault();
-  try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), place: $("#sPlace").value, about: $("#sAbout").value, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value, template: $("#sTpl").value }); toast("Тохиргоо хадгалагдлаа."); SET_EDIT = false; openExpo(EXPO.id, true); }
+  try { await call("updateExpo", { id: EXPO.id, slug: $("#sSlug").value.trim(), place: $("#sPlace").value, about: $("#sAbout").value, name: $("#sName").value, start: $("#sStart").value, end: $("#sEnd").value, holdHours: $("#sHold").value, advancePct: $("#sAdv").value, payInfo: $("#sPay").value, template: $("#sTpl").value, hours: $("#sHours").value, fee: $("#sFee").value, phone: $("#sPhone").value, parking: $("#sParking").value }); toast("Тохиргоо хадгалагдлаа."); SET_EDIT = false; openExpo(EXPO.id, true); }
   catch (err) { toast(err.message); }
 };
 
@@ -407,7 +413,7 @@ function info() {
   } else {
     const left = b.status === "held" && b.heldAt ? Math.max(0, Math.ceil((b.heldAt + EXPO.holdHours * 3600e3 - (Date.now() - SKEW)) / 3600e3)) : null;
     h += '<p class="hint" style="margin-top:-6px">' + (b.m2 || "?") + " м² · " + esc(c.name) + "</p>" +
-      '<div class="kv"><span>Байгууллага</span><b>' + esc(b.org) + "</b>" + (b.person ? "<span>Хариуцах хүн</span><b>" + esc(b.person) + "</b>" : "") + (b.tel ? "<span>Утас</span><b>" + esc(b.tel) + "</b>" : "") + (b.mail ? "<span>Имэйл</span><b>" + esc(b.mail) + "</b>" : "") + (b.products ? "<span>Бүтээгдэхүүн</span><b>" + esc(b.products) + "</b>" : "") +
+      '<div class="kv"><span>Байгууллага</span><b>' + esc(b.org) + "</b>" + (b.person ? "<span>Хариуцах хүн</span><b>" + esc(b.person) + "</b>" : "") + (b.tel ? "<span>Утас</span><b>" + esc(b.tel) + "</b>" : "") + (b.mail ? "<span>Имэйл</span><b>" + esc(b.mail) + "</b>" : "") + (b.products ? "<span>Бүтээгдэхүүн</span><b>" + esc(b.products) + "</b>" : "") + (b.promo ? "<span>🎁 Хямдрал</span><b>" + esc(b.promo) + "</b>" : "") +
       "<span>Төлсөн</span><b>" + fmt(b.status === "paid" ? pr : b.status === "adv" ? adv : 0) + " / " + fmt(pr) + " ₮</b>" + (left !== null ? "<span>Барьцаа дуусах</span><b>" + left + " цагийн дараа</b>" : "") + (b.updatedBy ? "<span>Сүүлд бүртгэсэн</span><b>" + esc(b.updatedBy) + "</b>" : "") + "</div>" +
       '<div class="row">' + (b.status === "held" ? '<button class="btn pri" id="aAdv">Урьдчилгаа орсон (' + fmt(adv) + " ₮)</button>" : "") + (b.status === "adv" ? '<button class="btn pri" id="aPaid">Үлдэгдэл орсон (' + fmt(pr - adv) + " ₮)</button>" : "") +
       '<button class="btn warn" id="aCancel">' + (cancelArm === b.id ? "Дахин дарж цуцлахыг батална" : "Захиалга цуцлах") + "</button></div>" +

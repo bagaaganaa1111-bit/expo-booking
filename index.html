@@ -152,6 +152,7 @@ function info() {
   if (mine) {
     h += '<div class="ok"><strong>Захиалга бүртгэгдлээ, баярлалаа!</strong><p class="hint" style="margin-top:4px">' + esc(b.code) + " лангуу " + mine.holdHours + " цагийн турш танд барьцаалагдлаа. Энэ хугацаанд урьдчилгаагаа төлнө үү. Менежер удахгүй тантай холбогдоно.</p></div>" +
       '<div class="kv"><span>Байгууллага</span><b>' + esc(mine.org) + "</b><span>Нийт дүн</span><b>" + fmt(mine.price) + " ₮</b><span>Урьдчилгаа</span><b>" + fmt(mine.advance) + " ₮</b><span>Гүйлгээний утга</span><b>" + esc(b.code + " " + mine.org) + "</b>" + (D.expo.payInfo ? "<span>Данс</span><b>" + esc(D.expo.payInfo) + "</b>" : "") + "</div>";
+    h += '<p class="hint">🎁 Үзэсгэлэнгийн өдрүүдэд хямдрал зарлах бол <a href="promo.html?e=' + encodeURIComponent(EID) + '">энд бүртгүүлээрэй</a> — бид сошиал сувгуудаараа үнэгүй сурталчилна.</p>';
   } else if (b.status === "free") {
     h += '<form id="bf" class="grid" novalidate>' +
       '<label class="f">Байгууллагын нэр *<input id="fOrg" type="text" autocomplete="organization" placeholder="Өглөө Трейд ХХК"><span class="err" id="eOrg"></span></label>' +

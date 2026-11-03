@@ -803,7 +803,7 @@ function notify_(kind, text, opt) {
   if (!prop_('TELEGRAM_TOKEN')) return;
   opt = opt || {};
   const g = ids_('TELEGRAM_CHAT'), d = ids_('TELEGRAM_DIRECTOR'), a = ids_('TELEGRAM_ADMIN');
-  const to = kind === 'ops' ? g.concat(d) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? a.concat(d) : g.concat(d, a);
+  const to = kind === 'ops' ? g.concat(d, a) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? a.concat(d) : g.concat(d, a);
   to.filter((c, i) => c && to.indexOf(c) === i && String(c) !== String(opt.skip || '')).forEach(chat => {
     tgSend_(chat, text, opt.buttons && opt.buttons.length ? { inline_keyboard: opt.buttons } : null);
   });
@@ -1188,6 +1188,7 @@ function tgUpdate_(u, p) {
   const who = tgWho_(m.chat.id, m.from);
   if (!who) { tgRemember_(m.chat); if (m.chat.type === 'private') tgStranger_(m.chat.id); return; }
   if (cmd === '/logout') return tgLogout_(who.chat);
+  if (cmd === '/check' && who.role === 'admin') return tgDiag_(who.chat);
   // 📢 Пост бэлдэж байгаа үед зураг, текст постод орно
   if (cmd === '/post') return postStart_(who, m);
   if (m.chat.type === 'private' && who.role === 'admin') {
@@ -1780,6 +1781,29 @@ function tgConnect() {
 }
 
 /** Ботын командын жагсаалт (Menu). */
+/** /check — мэдэгдэл хаашаа очиж байгааг шалгана: чат бүрийн нэр, туршилтын мессеж, сүүлийн захиалгууд. */
+function tgDiag_(chat) {
+  const L = ['🩺 Мэдэгдлийн шалгалт (' + BUILD + ')'];
+  [['Менежерийн групп', 'TELEGRAM_CHAT'], ['Захирлууд', 'TELEGRAM_DIRECTOR'], ['Систем админ', 'TELEGRAM_ADMIN'], ['Захирлын хувийн чат', 'TELEGRAM_USERS']].forEach(([n, k]) => {
+    const ids = ids_(k);
+    if (!ids.length) { L.push('\n' + n + ': тохируулаагүй'); return; }
+    ids.forEach(id => {
+      const c = tg_('getChat', { chat_id: id }), r = c.result || {};
+      const title = c.ok ? (r.title || [r.first_name, r.last_name].filter(Boolean).join(' ') || r.username || '') : '';
+      let sent = { ok: false, description: c.description };
+      if (c.ok && String(id) !== String(chat)) sent = tg_('sendMessage', { chat_id: id, text: '🧪 Туршилтын мессеж — захиалгын мэдээ энэ чатад ирнэ. (/check)' });
+      L.push('\n' + n + ': ' + (title ? '«' + title + '»' : id) + '\n   ' + (String(id) === String(chat) ? '✅ (энэ чат)' : sent.ok ? '✅ туршилт илгээлээ' : '❌ ' + String(sent.description || c.description || 'хүрэхгүй').slice(0, 120)));
+    });
+  });
+  const lf = prop_('TG_LAST_FAIL'); if (lf) L.push('\nСүүлийн алдаа: ' + String(lf).slice(0, 200));
+  const names = {}; readAll_(SH.EXPO).forEach(e => { names[e.id] = e.name; });
+  const last = readAll_(SH.BOOTH).filter(b => b.heldAt).map(b => ({ b, t: b.heldAt instanceof Date ? b.heldAt.getTime() : Date.parse(b.heldAt) || 0 }))
+    .sort((x, y) => y.t - x.t).slice(0, 3);
+  L.push('\nСүүлийн захиалгууд:' + (last.length ? '' : ' алга'));
+  last.forEach(x => L.push('• ' + Utilities.formatDate(new Date(x.t), Session.getScriptTimeZone(), 'MM-dd HH:mm') + ' ' + x.b.code + ' — ' + (x.b.org || '') + ' (' + (names[x.b.expoId] || '') + ', ' + x.b.status + ')'));
+  tgSend_(chat, L.join('\n'));
+}
+
 function tgCommands_() {
   tg_('setMyCommands', { commands: [
     { command: 'menu', description: 'Үндсэн цэс' },
@@ -1789,7 +1813,8 @@ function tgCommands_() {
     { command: 'find', description: 'Утас, нэрээр хайх' },
     { command: 'orgs', description: 'Оролцогчид — шүүж харах' },
     { command: 'post', description: 'Facebook, Telegram, Viber-т пост оруулах' },
-    { command: 'login', description: 'Ажилтан холбогдох: /login PIN' }
+    { command: 'login', description: 'Ажилтан холбогдох: /login PIN' },
+    { command: 'check', description: 'Мэдэгдэл хаашаа очиж байгааг шалгах' }
   ] });
 }
 

@@ -49,7 +49,9 @@
 <script src="config.js"></script>
 <script src="common.js?v=4"></script>
 <script>
-const EID = new URLSearchParams(location.search).get("e") || "";
+// Үзэсгэлэнгийн код: ?e=код эсвэл цэвэр хаяг /код (404.html дамжуулна)
+const PATH_ID = location.pathname.replace(/^\/+|\/+$/g, "").split("/").pop();
+const EID = new URLSearchParams(location.search).get("e") || (PATH_ID && !/\./.test(PATH_ID) && PATH_ID !== "expo-booking" ? decodeURIComponent(PATH_ID) : "");
 let D = null, sel = null, done = {}, filter = null, zoom = 100, busy = false;
 const MINE = "expo-mine-" + EID;
 try { done = JSON.parse(store(MINE) || "{}") || {}; } catch (e) { done = {}; }
@@ -67,7 +69,7 @@ async function home() {
   try {
     const r = await api("list");
     const open = r.expos.filter(x => x.open);
-    if (open.length === 1 && r.expos.length === 1) { location.replace("?e=" + encodeURIComponent(open[0].key)); return; }
+    if (open.length === 1 && r.expos.length === 1) { location.replace(encodeURIComponent(open[0].key)); return; }
     $("#loading").hidden = true; $("#home").hidden = false;
     if (!r.expos.length) { $("#home").innerHTML = '<div class="card"><h2>Одоогоор нээлттэй захиалга алга</h2><p class="hint">Шинэ үзэсгэлэнгийн захиалга нээгдэхэд энд харагдана.</p></div>'; return; }
     $("#home").innerHTML = r.expos.map(x => {
@@ -76,7 +78,7 @@ async function home() {
         '<div class="expo-body"><span class="pill" style="align-self:flex-start;color:var(--' + (x.open ? "free" : "muted") + ');border-color:var(--' + (x.open ? "free" : "line") + ')">' + (x.open ? "Захиалга нээлттэй" : "Удахгүй") + '</span>' +
         '<h2 style="font-size:19px">' + esc(x.name) + '</h2><p class="hint">' + esc([range(x.start, x.end), x.place].filter(Boolean).join(" · ")) + '</p>' +
         (x.about ? '<p style="margin:0;max-width:62ch;white-space:pre-line">' + esc(x.about) + '</p>' : "") +
-        (x.open ? '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="hint"><b style="color:var(--fg)">' + x.free + '</b> / ' + x.total + ' лангуу сул байна</p><div><a class="btn pri" href="?e=' + encodeURIComponent(x.key) + '">Лангуу захиалах →</a></div>'
+        (x.open ? '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="hint"><b style="color:var(--fg)">' + x.free + '</b> / ' + x.total + ' лангуу сул байна</p><div><a class="btn pri" href="' + encodeURIComponent(x.key) + '">Лангуу захиалах →</a></div>'
           : '<p class="hint">Захиалга нээгдэхэд энэ хуудсаар захиалах боломжтой болно.</p>') + "</div></article>";
     }).join("");
     showPosters(r.expos.map(x => x.poster).filter(Boolean));
@@ -158,7 +160,7 @@ function info() {
       '<label class="f">Байгууллагын нэр *<input id="fOrg" type="text" autocomplete="organization" placeholder="Өглөө Трейд ХХК"><span class="err" id="eOrg"></span></label>' +
       '<label class="f">Хариуцах хүн<input id="fPer" type="text" autocomplete="name" placeholder="Б. Сараа"></label>' +
       '<label class="f">Утас *<input id="fTel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="99112233"><span class="err" id="eTel"></span></label>' +
-      '<label class="f">Имэйл<input id="fMail" type="email" autocomplete="email" placeholder="info@company.mn"><span class="err" id="eMail"></span></label>' +
+      '<label class="f">Имэйл (заавал биш)<input id="fMail" type="email" autocomplete="email" placeholder="info@company.mn"><span class="err" id="eMail"></span></label>' +
       (D.products && D.products.length ? '<div class="f" style="grid-column:1/-1"><span>Юу худалдах вэ? * <span class="hint">(' + (D.maxProducts || 3) + ' хүртэл сонгоно)</span></span><div id="fProd"></div><span class="err" id="eProd"></span></div>' : "") +
       '<div class="row" style="grid-column:1/-1"><button class="btn pri" type="submit" id="fBtn">Захиалах</button><span class="hint">Урьдчилгаа ' + fmt(adv) + " ₮ · " + D.expo.holdHours + " цагийн дотор</span></div><span class=\"err\" id=\"eAll\" style=\"grid-column:1/-1\"></span></form>";
   } else h += '<p class="hint">Энэ лангуу ' + (b.status === "held" ? "түр барьцаалагдсан" : "захиалагдсан") + " байна. Ногоон хүрээтэй сул лангуунаас сонгоно уу.</p>";
@@ -169,7 +171,7 @@ function info() {
   f.onsubmit = async e => {
     e.preventDefault(); if (busy) return;
     const org = $("#fOrg").value.trim(), tel = $("#fTel").value.replace(/[\s-]/g, ""), mail = $("#fMail").value.trim();
-    const okTel = /^\d{8}$/.test(tel), okMail = !mail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail);
+    const okTel = /^\d{8}$/.test(tel), okMail = true; // имэйл заавал биш, буруу бичсэн ч захиалгыг саатуулахгүй
     $("#eOrg").textContent = org ? "" : "Байгууллагын нэрээ оруулна уу"; $("#eTel").textContent = okTel ? "" : "8 оронтой утасны дугаар оруулна уу"; $("#eMail").textContent = okMail ? "" : "Имэйл хаяг буруу байна";
     const pr = pp ? pp.get() : { products: [], other: "" }, okProd = !pp || pr.products.length || pr.other;
     if (pp) $("#eProd").textContent = okProd ? "" : "Юу худалдахаа сонгоно уу";

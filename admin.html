@@ -250,7 +250,7 @@ function render() {
   const ob = $("#openBtn"); if (ob) ob.onclick = () => setExpoStatus("open");
   const cb = $("#closeBtn"); if (cb) cb.onclick = () => { if (cb.dataset.arm) setExpoStatus("closed"); else { cb.dataset.arm = 1; cb.textContent = "Дахин дарж хаахыг батална"; } };
   const cl = $("#copyLink"); if (cl) cl.onclick = copyLink;
-  const cp = $("#copyPromo"); if (cp) cp.onclick = async () => { const u = pubLink().replace(/\?e=/, "promo.html?e="); try { await navigator.clipboard.writeText(u); toast("Хуулагдлаа. Оролцогчдод илгээвэл тэд үзэсгэлэнгийн хямдралаа бүртгүүлнэ.", 5000); } catch (e) { toast(u, 8000); } };
+  const cp = $("#copyPromo"); if (cp) cp.onclick = async () => { const u = pubLink().replace(/([^/]+)$/, "promo.html?e=$1"); try { await navigator.clipboard.writeText(u); toast("Хуулагдлаа. Оролцогчдод илгээвэл тэд үзэсгэлэнгийн хямдралаа бүртгүүлнэ.", 5000); } catch (e) { toast(u, 8000); } };
   const note = $("#eNote");
   if (EXPO.status !== "open" && hasB && !BOSS()) { note.hidden = false; note.textContent = "Лангуунуудыг шалгаж \"Хадгалах\" дарна уу. Үнэ тогтоож, захиалга нээх ажлыг захирал хийнэ."; }
   else if (EXPO.status !== "open" && hasB) { note.hidden = false; note.textContent = "Лангуу, үнийг шалгаж \"Хадгалах\" дарсны дараа \"Захиалга нээх\" товчоор оролцогчдод нээнэ." + (EXPO.payInfo ? "" : " Доорх тохиргоонд төлбөрийн дансаа оруулахаа мартуузай."); }
@@ -267,7 +267,7 @@ function render() {
   renderPlan(); info(); cats(); stats(); list();
   $("#planHint").textContent = adding ? "Зураг дээр хуруугаараа чирж шинэ лангууны хүрээг зурна." : "Лангуу дээр дарж сонгоно. Сонгосон лангууг чирж зөөнө, баруун доод булангийн дугуйг чирж хэмжээг тааруулна.";
 }
-function pubLink() { return location.href.replace(/admin\.html.*$/, "").replace(/#.*$/, "").replace(/\/?$/, "/") + "?e=" + (EXPO.slug || EXPO.id); }
+function pubLink() { return location.href.replace(/admin\.html.*$/, "").replace(/#.*$/, "").replace(/\/?$/, "/") + (EXPO.slug || EXPO.id); }
 async function copyLink() { const u = pubLink(); try { await navigator.clipboard.writeText(u); toast("Холбоос хуулагдлаа. Оролцогчдод илгээнэ үү."); } catch (e) { toast("Холбоосыг дээрх хэсгээс сонгож хуулна уу."); } }
 async function setExpoStatus(status) {
   if (dirty) { if (!(await save())) return; }

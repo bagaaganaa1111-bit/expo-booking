@@ -381,10 +381,10 @@ function apiImage_(req) {
 }
 
 function apiBook_(req) {
-  const org = str_(req.org, 120), person = str_(req.person, 80), tel = str_(req.tel, 20).replace(/[\s-]/g, ''), mail = str_(req.mail, 120);
+  const org = str_(req.org, 120), person = str_(req.person, 80), tel = str_(req.tel, 20).replace(/[\s-]/g, ''), mail0 = str_(req.mail, 120), mail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail0) ? mail0 : '';
   if (!org) fail_('Байгууллагын нэрээ оруулна уу.');
   if (!/^\d{8}$/.test(tel)) fail_('8 оронтой утасны дугаар оруулна уу.');
-  if (mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) fail_('Имэйл хаяг буруу байна.');
+  // Имэйл заавал биш: буруу бичсэн бол хадгалахгүй, захиалгыг саатуулахгүй
   const res = withLock_(() => {
     const e = findExpo_(req.e);
     if (e.status !== 'open') fail_('Энэ үзэсгэлэнгийн захиалга нээлттэй биш байна.');
@@ -2298,7 +2298,7 @@ function postCtx_(expoId) {
     place: need(e.place, 'Байршил (Тохиргоо)', 'байршил'),
     hours: need(e.hours, 'Нээлттэй цаг (Тохиргоо)', 'нээлттэй цаг'),
     fee: String(e.fee || '').trim(), phone: need(e.phone, 'Холбоо барих утас (Тохиргоо)', 'утас'), parking: String(e.parking || '').trim(),
-    link: web + '?e=' + encodeURIComponent(e.slug || e.id), promoLink: web + 'promo.html?e=' + encodeURIComponent(e.slug || e.id),
+    link: web + encodeURIComponent(e.slug || e.id), promoLink: web + 'promo.html?e=' + encodeURIComponent(e.slug || e.id),
     closeDate: start ? md(Utilities.formatDate(new Date(Date.parse(start) - 864e5), tz, 'yyyy-MM-dd')) : '[огноо]',
     tag: '#' + String(e.name).replace(/[^0-9A-Za-zА-Яа-яЁёӨөҮү]+/g, '') + ' #СаяМөнх'
   };

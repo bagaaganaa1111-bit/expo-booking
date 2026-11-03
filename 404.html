@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Лангуу захиалга</title>
+<style>body{font:15px/1.5 Roboto,system-ui,sans-serif;color:#5D6375;background:#F2F3F6;display:grid;place-items:center;min-height:90vh;margin:0}</style>
+</head>
+<body>
+<p id="m">Ачааллаж байна…</p>
+<script>
+// Цэвэр хаяг: zahialga.sayamunkh.mn/bazaarexpo → захиалгын хуудсыг энэ хаяг дээрээ харуулна (?e= шаардлагагүй).
+// GitHub Pages байхгүй замд энэ хуудсыг өгдөг тул index.html-ийг татаж, хаягийг өөрчлөхгүйгээр харуулна.
+(async () => {
+  const id = location.pathname.replace(/^\/+|\/+$/g, "").split("/").pop();
+  if (!id || /\./.test(id)) { document.getElementById("m").innerHTML = 'Хуудас олдсонгүй. <a href="/">Нүүр хуудас</a>'; return; }
+  try {
+    const r = await fetch("/index.html", { cache: "no-cache" });
+    if (!r.ok) throw new Error(r.status);
+    const html = (await r.text()).replace("<head>", '<head><base href="/">');
+    document.open(); document.write(html); document.close();
+  } catch (e) { location.replace("/?e=" + encodeURIComponent(id)); }
+})();
+</script>
+</body>
+</html>

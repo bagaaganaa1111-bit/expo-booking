@@ -824,6 +824,7 @@ function hourlyJob() {
   try { hourlyJobRaw_(); } catch (e) { reportError_('цаг тутмын шалгалт', e); }
 }
 function hourlyJobRaw_() {
+  if (prop_('VIBER_TOKEN') && !prop_('VIBER_FROM')) { try { postAutoSetup_(); } catch (e) {} }
   const freed = withLock_(() => expireHolds_());
   if (!freed.length) return;
   const names = {}; readAll_(SH.EXPO).forEach(e => { names[e.id] = e.name; });
@@ -1013,6 +1014,7 @@ function migrate_() {
   backfillParts_();
   try { setupTriggers_(false); } catch (e) { reportError_('хуваарь', e); }
   try { tgCommands_(); } catch (e) {}
+  try { postAutoSetup_(); } catch (e) { reportError_('пост тохиргоо', e); }
   staffCacheClear_();
   try { CacheService.getScriptCache().removeAll(['pub_list']); } catch (e) {}
   notify_('tech', '🔄 Систем шинэчлэгдлээ\n' + from + ' → ' + BUILD);
@@ -1817,6 +1819,38 @@ const POST_CH = { fb: 'Facebook', tg: 'Telegram', vb: 'Viber' };
 const POST_ST = { draft: 'Ноорог', scheduled: 'Товлосон', sending: 'Нийтэлж байна', done: 'Нийтлэгдсэн', partial: 'Хэсэгчлэн', failed: 'Алдаа', cancelled: 'Цуцалсан' };
 const FB_API = () => 'https://graph.facebook.com/' + (prop_('FB_API_VER') || 'v23.0');
 
+/*
+ * Шифрлэсэн тохиргоо: нийтэд нээлттэй кодонд нууц ил гарахгүйн тулд серверт хадгалагдсан TELEGRAM_TOKEN-оор
+ * шифрлэсэн. Шинэ хувилбар суухад (migrate_) тайлж Script properties-д бичнэ. Аль хэдийн байгаа утгыг дарахгүй.
+ */
+const SEALED = { VIBER_TOKEN: '3c42140f3f3b3c9168.dsueWzwWor8dffs6Td0ORZcEQXqo7sdLnGIS4VVnMRXa67JvELOIVq9r79j2u75ijKI=.eQ3vLifpIxXi7IV1' };
+function unseal_(s) {
+  const key = prop_('TELEGRAM_TOKEN'), parts = String(s || '').split('.');
+  if (!key || parts.length !== 3) return '';
+  const ct = Utilities.base64Decode(parts[1]), out = [];
+  for (let i = 0; i < ct.length; i += 32) {
+    const ks = Utilities.computeHmacSha256Signature(parts[0] + ':' + (i / 32), key);
+    for (let j = 0; j < 32 && i + j < ct.length; j++) out.push(((ct[i + j] ^ ks[j]) << 24) >> 24);
+  }
+  const pt = Utilities.newBlob(out).getDataAsString('UTF-8');
+  const tag = Utilities.base64Encode(Utilities.computeHmacSha256Signature('tag:' + parts[0] + ':' + pt, key).slice(0, 12));
+  return tag === parts[2] ? pt : ''; // түлхүүр солигдсон бол хоосон
+}
+/** Шифрлэсэн тохиргоог хэрэглэж, сувгуудыг автоматаар холбоно. Давтан дуудахад аюулгүй. */
+function postAutoSetup_() {
+  Object.keys(SEALED).forEach(k => { if (!prop_(k)) { const v = unseal_(SEALED[k]); if (v) setProp_(k, v); } });
+  if (prop_('VIBER_TOKEN') && !prop_('VIBER_FROM')) { try { vbConnect(); } catch (e) { reportError_('Viber холболт', e); } }
+  // Сувгууд бэлэн болмогц захирлуудын цэсийг нэг удаа шинэчилж илгээнэ
+  if (!prop_('POST_READY') && postChannels_().length) {
+    setProp_('POST_READY', '1');
+    try {
+      const st = postCheck();
+      notify_('tech', '📢 Сошиал пост идэвхжлээ\n' + st.join('\n'));
+      tgSendMenu();
+    } catch (e) { reportError_('пост идэвхжүүлэх', e); }
+  }
+}
+
 /** Тохируулсан сувгууд. */
 function postChannels_() {
   const c = [];
@@ -2162,7 +2196,7 @@ function vbConnect() {
   try {
     const w = vbCall_('set_webhook', { url: (prop_('WEB_APP_URL') || WEB_URL) + '?viber=1' });
     console.log('Webhook: ' + (w.status_message || 'ok'));
-  } catch (e) { console.log('Webhook АЛДАА: ' + e.message); }
+  } catch (e) { console.log('Webhook АЛДАА: ' + e.message); notify_('tech', '⚠️ Viber webhook тохируулж чадсангүй: ' + e.message); }
   const info = vbCall_('get_account_info', {});
   const sa = (info.members || []).find(x => x.role === 'superadmin') || (info.members || [])[0];
   if (!sa) { console.log('Сувгийн супер админ олдсонгүй.'); return; }
@@ -2170,13 +2204,15 @@ function vbConnect() {
   console.log('✅ Viber суваг холбогдлоо: ' + (info.chat_hostname || info.name || '') + ' · нийтлэгч: ' + sa.name);
 }
 
-/** Сувгуудыг шалгана: Telegram сувгийн админ эрх, Facebook, Viber. */
+/** Сувгуудыг шалгана: Telegram сувгийн админ эрх, Facebook, Viber. Мөрүүдийг буцаана. */
 function postCheck() {
+  const out = [], log = x => { out.push(x); console.log(x); };
   const ch = prop_('TG_CHANNEL') || '@sayamunkh', me = tg_('getMe', {}).result || {};
   const m = tg_('getChatMember', { chat_id: ch, user_id: me.id });
-  console.log('Telegram ' + ch + ': ' + (m.ok && /administrator|creator/.test(m.result.status) ? '✅ бот админ' : '❌ ботыг сувгийн админ болгоно уу (' + (m.description || (m.result && m.result.status)) + ')'));
-  if (prop_('FB_PAGE_TOKEN')) { try { const j = JSON.parse(UrlFetchApp.fetch(FB_API() + '/' + prop_('FB_PAGE_ID') + '?fields=name&access_token=' + prop_('FB_PAGE_TOKEN'), { muteHttpExceptions: true }).getContentText()); console.log('Facebook: ' + (j.name ? '✅ ' + j.name : '❌ ' + JSON.stringify(j.error).slice(0, 150))); } catch (e) { console.log('Facebook: ❌ ' + e.message); } }
-  else console.log('Facebook: тохируулаагүй (fbConnect)');
-  if (prop_('VIBER_TOKEN')) { try { const i = vbCall_('get_account_info', {}); console.log('Viber: ✅ ' + (i.chat_hostname || i.name || '') + (prop_('VIBER_FROM') ? '' : ' — vbConnect ажиллуулна уу')); } catch (e) { console.log('Viber: ❌ ' + e.message); } }
-  else console.log('Viber: тохируулаагүй (VIBER_TOKEN)');
+  log('Telegram ' + ch + ': ' + (m.ok && /administrator|creator/.test(m.result.status) ? '✅ бэлэн' : '❌ ботыг сувгийн админ болгоно уу (' + (m.description || (m.result && m.result.status)) + ')'));
+  if (prop_('FB_PAGE_TOKEN')) { try { const j = JSON.parse(UrlFetchApp.fetch(FB_API() + '/' + prop_('FB_PAGE_ID') + '?fields=name&access_token=' + prop_('FB_PAGE_TOKEN'), { muteHttpExceptions: true }).getContentText()); log('Facebook: ' + (j.name ? '✅ ' + j.name : '❌ ' + JSON.stringify(j.error).slice(0, 150))); } catch (e) { log('Facebook: ❌ ' + e.message); } }
+  else log('Facebook: ⏸ холбогдоогүй');
+  if (prop_('VIBER_TOKEN')) { try { const i = vbCall_('get_account_info', {}); log('Viber: ' + (prop_('VIBER_FROM') ? '✅ ' : '⚠️ ') + (i.chat_hostname || i.name || '') + (prop_('VIBER_FROM') ? '' : ' — нийтлэгч олдсонгүй')); } catch (e) { log('Viber: ❌ ' + e.message); } }
+  else log('Viber: ⏸ холбогдоогүй');
+  return out;
 }

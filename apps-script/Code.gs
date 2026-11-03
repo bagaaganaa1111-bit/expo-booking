@@ -802,7 +802,8 @@ function apiStaffSave_(req, who) {
 function notify_(kind, text, opt) {
   if (!prop_('TELEGRAM_TOKEN')) return;
   opt = opt || {};
-  const g = ids_('TELEGRAM_CHAT'), d = ids_('TELEGRAM_DIRECTOR'), a = ids_('TELEGRAM_ADMIN');
+  // Захирлын групп тохируулаагүй бол захирлуудын хувийн чат руу илгээнэ.
+  const g = ids_('TELEGRAM_CHAT'), d0 = ids_('TELEGRAM_DIRECTOR'), d = d0.length ? d0 : ids_('TELEGRAM_USERS'), a = ids_('TELEGRAM_ADMIN');
   const to = kind === 'ops' ? g.concat(d, a) : kind === 'report' ? (d.length ? d : a) : kind === 'tech' ? a.concat(d) : g.concat(d, a);
   to.filter((c, i) => c && to.indexOf(c) === i && String(c) !== String(opt.skip || '')).forEach(chat => {
     tgSend_(chat, text, opt.buttons && opt.buttons.length ? { inline_keyboard: opt.buttons } : null);
@@ -1784,9 +1785,9 @@ function tgConnect() {
 /** /check — мэдэгдэл хаашаа очиж байгааг шалгана: чат бүрийн нэр, туршилтын мессеж, сүүлийн захиалгууд. */
 function tgDiag_(chat) {
   const L = ['🩺 Мэдэгдлийн шалгалт (' + BUILD + ')'];
-  [['Менежерийн групп', 'TELEGRAM_CHAT'], ['Захирлууд', 'TELEGRAM_DIRECTOR'], ['Систем админ', 'TELEGRAM_ADMIN'], ['Захирлын хувийн чат', 'TELEGRAM_USERS']].forEach(([n, k]) => {
+  [['Менежерийн групп', 'TELEGRAM_CHAT'], ['Захирлын групп', 'TELEGRAM_DIRECTOR'], ['Систем админ', 'TELEGRAM_ADMIN'], ['Захирлын хувийн чат', 'TELEGRAM_USERS']].forEach(([n, k]) => {
     const ids = ids_(k);
-    if (!ids.length) { L.push('\n' + n + ': тохируулаагүй'); return; }
+    if (!ids.length) { L.push('\n' + n + ': тохируулаагүй' + (k === 'TELEGRAM_DIRECTOR' && ids_('TELEGRAM_USERS').length ? ' → мэдээ захирлын хувийн чат руу очно' : '')); return; }
     ids.forEach(id => {
       const c = tg_('getChat', { chat_id: id }), r = c.result || {};
       const title = c.ok ? (r.title || [r.first_name, r.last_name].filter(Boolean).join(' ') || r.username || '') : '';

@@ -197,3 +197,18 @@ Apps Script → **Deploy → Manage deployments** → ✏️ → **Version** ж�
 | Код өөрчилсөн ч хуучнаараа | Deploy → Manage deployments → **New version** |
 
 Өгөгдөл бүхэлдээ Google Sheets-д байгаа тул хуудас ажиллахгүй үед ч мэдээлэл алдагдахгүй, Sheets-ээс шууд харж болно.
+
+
+## 📢 Сошиал пост (Facebook, Telegram, Viber)
+
+Захирал ботын **хувийн чатад** цэснээс **📢 Пост оруулах** дарж, зураг (10 хүртэл) болон текстээ илгээнэ → урьдчилан харна → сувгаа сонгоод **Одоо нийтлэх** эсвэл **⏰ Цаг товлох**. **✨ Текстийг сайжруулах** нь AI-аар засна. **🗓 Товлосон постууд** — харах, цаг солих, цуцлах. Бүх пост **Пост** хуудсанд бүртгэгдэнэ.
+
+Нэг удаагийн тохиргоо (Script properties):
+
+| Суваг | Алхам |
+|---|---|
+| Telegram (@sayamunkh) | Сувгийн тохиргоо → Administrators → @sayamunkh_bot-ийг админ болгох (Post messages эрхтэй). Өөр суваг бол `TG_CHANNEL`. |
+| Viber | Суваг → ⋮ → Мэдээлэл → Тохиргоо → **Developer tools** → токен хуулах → `VIBER_TOKEN` → **vbConnect** ▷ Run |
+| Facebook пэйж | developers.facebook.com → апп үүсгэх → Graph API Explorer-оос `pages_manage_posts, pages_read_engagement, pages_show_list` эрхтэй токен → `FB_APP_ID`, `FB_APP_SECRET`, `FB_USER_TOKEN` → **fbConnect** ▷ Run → аппыг **Live** болгох (Privacy policy URL: `…/expo-booking/privacy.html`) |
+
+Шалгах: **postCheck** ▷ Run.

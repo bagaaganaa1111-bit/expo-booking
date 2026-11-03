@@ -16,7 +16,7 @@
  * Анх суулгахдаа setup() функцийг нэг удаа ажиллуулна.
  */
 
-const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх', PROD: 'Бүтээгдэхүүн', PART: 'Оролцоо', ORG: 'Оролцогчид' };
+const SH = { EXPO: 'Үзэсгэлэн', CAT: 'Салбар', BOOTH: 'Лангуу', STAFF: 'Ажилтан', LOG: 'Түүх', PROD: 'Бүтээгдэхүүн', PART: 'Оролцоо', ORG: 'Оролцогчид', POST: 'Пост' };
 const COLS = {
   'Үзэсгэлэн': ['id', 'name', 'start', 'end', 'imageId', 'imgW', 'imgH', 'status', 'holdHours', 'advancePct', 'createdAt', 'payInfo', 'slug', 'place', 'about', 'posterId', 'template'],
   'Салбар': ['expoId', 'catId', 'name', 'color', 'price'],
@@ -29,7 +29,9 @@ const COLS = {
   'Оролцоо': ['Үзэсгэлэн', 'Лангуу', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Төлөв', 'Дүн', 'Захиалсан', 'Шинэчилсэн', 'Бүртгэсэн', 'expoId', 'boothId'],
   // Байгууллага бүр нэг мөр: бүх үзэсгэлэнгийн нэгдсэн сан. Систем автоматаар бичнэ.
   'Оролцогчид': ['Түлхүүр', 'Байгууллага', 'Хариуцах хүн', 'Утас', 'Имэйл', 'Бүтээгдэхүүн', 'Оролцсон үзэсгэлэн', 'Тоо', 'Анх бүртгэгдсэн', 'Сүүлд',
-    'Салбар', 'Эх сурвалж', 'Нэмсэн', 'Нэмэлт утас', 'Хаяг', 'Вэбсайт', 'Facebook', 'Тайлбар']
+    'Салбар', 'Эх сурвалж', 'Нэмсэн', 'Нэмэлт утас', 'Хаяг', 'Вэбсайт', 'Facebook', 'Тайлбар'],
+  // Сошиал пост: Facebook пэйж, Telegram суваг, Viber суваг руу. Систем автоматаар бичнэ.
+  'Пост': ['id', 'status', 'at', 'chat', 'by', 'text', 'orig', 'photos', 'targets', 'results', 'msg', 'createdAt', 'publishedAt']
 };
 /** Гараар засах хүснэгтүүд (хамгаалалт тавихгүй). */
 const EDITABLE = { 'Бүтээгдэхүүн': 1 };
@@ -50,6 +52,7 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return out_({ ok: false, error: 'Хүсэлт буруу байна.' }); }
+  if (body && body.event && (e && e.parameter && e.parameter.viber)) return HtmlService.createHtmlOutput('ok'); // Viber webhook шалгалт
   if (body && body.update_id !== undefined) {
     // Telegram-ын товч, команд
     try { ensureSchema_(); tgUpdate_(body, (e && e.parameter) || {}); } catch (err) { reportError_('telegram', err); }
@@ -950,7 +953,8 @@ function setupSheets_() {
 const TRIGGERS = {
   hourlyJob: b => b.everyHours(1),
   dailyReport: b => b.everyDays(1).atHour(9),
-  weeklyBackup: b => b.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(22)
+  weeklyBackup: b => b.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(22),
+  postRunner: b => b.everyMinutes(5)
 };
 function setupTriggers_(force) {
   const have = {};
@@ -1075,10 +1079,11 @@ function tgEdit_(msg, text, kb) {
   tg_('editMessageText', { chat_id: msg.chat.id, message_id: msg.message_id, text: String(text).slice(0, 4000), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb || [] } });
 }
 const PAGES_URL = 'https://bagaaganaa1111-bit.github.io/expo-booking/';
-function tgMenuKb_() {
+function tgMenuKb_(who) {
   const web = prop_('PAGES_URL') || PAGES_URL;
   const b = m => ({ text: m[0], callback_data: 'm|' + m[1] }), sheet = sheetUrl_(SH.ORG);
-  return [TG_MENU.slice(0, 2).map(b), TG_MENU.slice(2, 4).map(b), [b(TG_MENU[4])].concat(sheet ? [{ text: '📑 Бүртгэл (Sheets)', url: sheet }] : []), [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]];
+  const post = who && who.role === 'admin' && String(who.chat)[0] !== '-' ? [[{ text: '📢 Пост оруулах', callback_data: 'P|new' }, { text: '🗓 Товлосон постууд', callback_data: 'P|list' }]] : [];
+  return post.concat([TG_MENU.slice(0, 2).map(b), TG_MENU.slice(2, 4).map(b), [b(TG_MENU[4])].concat(sheet ? [{ text: '📑 Бүртгэл (Sheets)', url: sheet }] : []), [{ text: '📈 Дэлгэрэнгүй тайлан (вэб)', url: web.replace(/\/?$/, '/') + 'tailan.html' }]]);
 }
 /** Sheets файлын тухайн хуудсыг шууд нээх холбоос (файлд эрхтэй хүнд нээгдэнэ). */
 function sheetUrl_(name) {
@@ -1153,6 +1158,14 @@ function tgUpdate_(u, p) {
   const who = tgWho_(m.chat.id, m.from);
   if (!who) { tgRemember_(m.chat); if (m.chat.type === 'private') tgStranger_(m.chat.id); return; }
   if (cmd === '/logout') return tgLogout_(who.chat);
+  // 📢 Пост бэлдэж байгаа үед зураг, текст постод орно
+  if (cmd === '/post') return postStart_(who, m);
+  if (m.chat.type === 'private' && who.role === 'admin') {
+    const pt = cache.get('posttime_' + who.chat);
+    if (pt && text && text[0] !== '/') return postTimeTyped_(who, pt, text);
+    const pid = cache.get('postmode_' + who.chat);
+    if (pid && (m.photo || m.document || (text && text[0] !== '/' && !TG_MENU.some(x => x[0] === text)))) return postInput_(who, pid, m);
+  }
   // 📸 Байгууллагын зураг → оролцогчдын сан
   if (m.photo || (m.document && /^image\//.test(String(m.document.mime_type || '')))) {
     try { return tgLeadPhoto_(who, m); } catch (err) { if (!(err && err.userMessage)) reportError_('зураг', err); return tgSend_(who.chat, '⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Зургаа дахин явуулна уу.')); }
@@ -1161,7 +1174,7 @@ function tgUpdate_(u, p) {
   const lid = m.reply_to_message ? cache.get('leadmsg_' + who.chat + '_' + m.reply_to_message.message_id) : '';
   if (lid) return tgLeadFix_(who, lid, text);
   const fk = 'tgf_' + who.chat + '_' + (m.from && m.from.id);
-  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.' + (m.chat.type === 'private' ? '\n\n📸 Байгууллагын Facebook "Танилцуулга" хэсэг, нэрийн хуудасны зургийг энд явуулбал оролцогчдын санд бүртгэнэ.' : ''), { inline_keyboard: tgMenuKb_() });
+  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.' + (m.chat.type === 'private' ? '\n\n📸 Байгууллагын Facebook "Танилцуулга" хэсэг, нэрийн хуудасны зургийг энд явуулбал оролцогчдын санд бүртгэнэ.' : ''), { inline_keyboard: tgMenuKb_(who) });
   const hit = TG_MENU.find(x => text === x[0] || cmd === '/' + x[1]);
   if (hit) return tgMenuDo_(hit[1], who, m.from, m.message_id);
   const toBot = m.reply_to_message && m.reply_to_message.from && m.reply_to_message.from.is_bot;
@@ -1651,6 +1664,10 @@ function tgCallback_(q) {
   const msg = q.message || {}, who = tgWho_(msg.chat && msg.chat.id, q.from);
   const ans = (text, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: text || '', show_alert: !!alert });
   if (!who) return ans('Энэ чатаас үйлдэл хийх эрхгүй.', true);
+  if (String(q.data || '').indexOf('P|') === 0) {
+    try { return postBtn_(who, q, String(q.data).split('|')); }
+    catch (err) { if (!(err && err.userMessage)) reportError_('пост товч', err); return ans('⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Дахин дарна уу.'), true); }
+  }
   if (String(q.data || '').indexOf('L|') === 0) {
     try { return tgLeadBtn_(who, q, String(q.data).split('|')); }
     catch (err) { if (!(err && err.userMessage)) reportError_('бүртгэлийн товч', err); return ans('⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Дахин дарна уу.'), true); }
@@ -1737,6 +1754,7 @@ function tgCommands_() {
     { command: 'soon', description: '24 цагт суллагдах лангуу' },
     { command: 'find', description: 'Утас, нэрээр хайх' },
     { command: 'orgs', description: 'Оролцогчид — шүүж харах' },
+    { command: 'post', description: 'Facebook, Telegram, Viber-т пост оруулах' },
     { command: 'login', description: 'Ажилтан холбогдох: /login PIN' }
   ] });
 }
@@ -1781,7 +1799,384 @@ function apiRelayPair_(req) {
 /** Цэсийг бүх зөвшөөрөгдсөн чат руу илгээнэ (webhook-д хүрэхгүй, зуучлагчтай үед ашиглана). */
 function tgSendMenu() {
   ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
-    const s = tgSend_(chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу. Цэсийг дахин нээх бол /menu гэж бичнэ.', { inline_keyboard: tgMenuKb_() });
+    const s = tgSend_(chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу. Цэсийг дахин нээх бол /menu гэж бичнэ.', { inline_keyboard: tgMenuKb_(tgWho_(chat, null)) });
     console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
   });
+}
+
+/* ===================== 📢 Сошиал пост: Facebook пэйж, Telegram суваг, Viber суваг ===================== */
+/*
+ * Захирал ботын хувийн чатад "📢 Пост оруулах" дараад зураг, текстээ илгээнэ → урьдчилан харна →
+ * "Одоо нийтлэх" эсвэл "Цаг товлох". Товлосон постыг postRunner (5 минут тутам) нийтэлнэ.
+ * Тохиргоо (Script properties):
+ *   TG_CHANNEL    — Telegram суваг (анхдагч @sayamunkh; бот сувгийн админ байх ёстой)
+ *   VIBER_TOKEN   — Viber сувгийн түлхүүр (Суваг → Мэдээлэл → Тохиргоо → Developer tools); vbConnect() ажиллуулна
+ *   FB_APP_ID, FB_APP_SECRET, FB_USER_TOKEN — fbConnect() нэг удаа ажиллуулахад FB_PAGE_ID, FB_PAGE_TOKEN үүснэ
+ */
+const POST_CH = { fb: 'Facebook', tg: 'Telegram', vb: 'Viber' };
+const POST_ST = { draft: 'Ноорог', scheduled: 'Товлосон', sending: 'Нийтэлж байна', done: 'Нийтлэгдсэн', partial: 'Хэсэгчлэн', failed: 'Алдаа', cancelled: 'Цуцалсан' };
+const FB_API = () => 'https://graph.facebook.com/' + (prop_('FB_API_VER') || 'v23.0');
+
+/** Тохируулсан сувгууд. */
+function postChannels_() {
+  const c = [];
+  if (prop_('FB_PAGE_ID') && prop_('FB_PAGE_TOKEN')) c.push('fb');
+  if (prop_('TELEGRAM_TOKEN')) c.push('tg');
+  if (prop_('VIBER_TOKEN') && prop_('VIBER_FROM')) c.push('vb');
+  return c;
+}
+function postGet_(id) { const p = readAll_(SH.POST).find(x => String(x.id) === String(id)); if (!p) fail_('Пост олдсонгүй.'); return p; }
+function postPhotos_(p) { try { return JSON.parse(p.photos || '[]'); } catch (e) { return []; } }
+function postTargets_(p) { return String(p.targets || '').split(',').filter(Boolean); }
+function postResults_(p) { try { return JSON.parse(p.results || '{}'); } catch (e) { return {}; } }
+function postAt_(p) { return p.at instanceof Date ? p.at.getTime() : (Date.parse(p.at) || 0); }
+function fmtAt_(t) { return Utilities.formatDate(new Date(t), Session.getScriptTimeZone(), 'MM.dd HH:mm'); }
+
+/** Картын текст. */
+function postCardText_(p) {
+  const ph = postPhotos_(p), tg = postTargets_(p), res = postResults_(p), at = postAt_(p);
+  const head = { draft: '📢 Шинэ пост — ноорог', scheduled: '⏰ Товлосон пост', sending: '⏳ Нийтэлж байна…', done: '✅ Нийтлэгдсэн пост', partial: '⚠️ Хэсэгчлэн нийтлэгдсэн', failed: '⚠️ Нийтлэгдсэнгүй', cancelled: '❌ Цуцалсан пост' }[p.status] || '📢 Пост';
+  let t = head + (p.by ? ' · ' + p.by : '') + '\n' + (ph.length ? '🖼 ' + ph.length + ' зураг\n' : '') + '──────────\n' +
+    (String(p.text || '').trim() || '(Текст алга. Текстээ бичээд илгээнэ үү.)') + '\n──────────\n';
+  if (p.status === 'draft') {
+    t += ph.length || p.text ? 'Хаана нийтлэхээ сонгоод "Одоо нийтлэх" эсвэл "Цаг товлох" дарна уу.\nЗураг нэмэх, текст солих бол дахин илгээнэ.' : 'Зураг (10 хүртэл) болон текстээ энд илгээнэ үү.';
+  } else if (p.status === 'scheduled') t += '⏰ ' + fmtAt_(at) + '-д нийтлэгдэнэ · ' + tg.map(c => POST_CH[c]).join(', ');
+  else if (p.status !== 'cancelled') t += tg.map(c => (res[c] && res[c].ok ? '✅ ' : res[c] ? '❌ ' : '⏳ ') + POST_CH[c] + (res[c] && !res[c].ok ? ': ' + res[c].err : '')).join('\n') + (p.publishedAt ? '\n🕐 ' + fmtAt_(p.publishedAt instanceof Date ? p.publishedAt : Date.parse(p.publishedAt)) : '');
+  return t.slice(0, 4000);
+}
+function postCardKb_(p) {
+  const k = (t, a) => ({ text: t, callback_data: 'P|' + a + '|' + p.id });
+  if (p.status === 'draft') {
+    const ready = postPhotos_(p).length || String(p.text || '').trim(), tg = postTargets_(p);
+    const rows = [postChannels_().map(c => ({ text: (tg.indexOf(c) >= 0 ? '✅ ' : '⬜ ') + POST_CH[c], callback_data: 'P|t|' + p.id + '|' + c }))];
+    if (String(p.text || '').trim()) rows.push([k('✨ Текстийг сайжруулах', 'ai')].concat(p.orig ? [k('↩️ Анхны текст', 'undo')] : []));
+    if (ready) rows.push([k('📢 Одоо нийтлэх', 'now'), k('⏰ Цаг товлох', 'sch')]);
+    rows.push([k('❌ Болих', 'x')]);
+    return rows;
+  }
+  if (p.status === 'scheduled') return [[k('📢 Одоо нийтлэх', 'now'), k('🕐 Цаг солих', 'sch')], [k('❌ Цуцлах', 'x')]];
+  const res = postResults_(p), bad = postTargets_(p).filter(c => res[c] && !res[c].ok);
+  return bad.length ? [bad.map(c => ({ text: '🔁 ' + POST_CH[c] + ' дахин', callback_data: 'P|re|' + p.id + '|' + c }))] : [];
+}
+function postShow_(p, chat) {
+  const kb = postCardKb_(p);
+  if (p.msg) { const r = tg_('editMessageText', { chat_id: chat || p.chat, message_id: Number(p.msg), text: postCardText_(p), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb } }); if (r.ok || /not modified/.test(r.description || '')) return; }
+  const s = tgSend_(chat || p.chat, postCardText_(p), { inline_keyboard: kb });
+  if (s && s.result) { p.msg = s.result.message_id; writeRow_(SH.POST, p); }
+}
+function postNeedBoss_(who, chat) {
+  if (who.role !== 'admin') fail_('Пост оруулах эрх зөвхөн захиралд байна.');
+  if (String(chat)[0] === '-') fail_('Пост оруулахдаа ботын хувийн чат руу орж "📢 Пост оруулах" дарна уу.');
+}
+
+/** 📢 Пост оруулах — шинэ ноорог. */
+function postStart_(who, m) {
+  postNeedBoss_(who, who.chat);
+  const ch = postChannels_();
+  if (!ch.length) fail_('Сувгийн тохиргоо хийгдээгүй байна. Систем админд хандана уу.');
+  const p = withLock_(() => {
+    // Хуучин ноорог байвал цуцална
+    const c = CacheService.getScriptCache(), old = c.get('postmode_' + who.chat);
+    if (old) { const o = readAll_(SH.POST).find(x => String(x.id) === old); if (o && o.status === 'draft') { o.status = 'cancelled'; writeRow_(SH.POST, o); } }
+    const n = { id: uid_(), status: 'draft', chat: who.chat, by: who.short, text: '', orig: '', photos: '[]', targets: ch.join(','), results: '{}', createdAt: new Date() };
+    appendRows_(SH.POST, [n]);
+    c.put('postmode_' + who.chat, n.id, 3600); c.remove('posttime_' + who.chat);
+    return readAll_(SH.POST).find(x => String(x.id) === n.id);
+  });
+  postShow_(p, who.chat);
+}
+
+/** Пост бэлдэх үед ирсэн зураг / текст. */
+function postInput_(who, id, m) {
+  let fileId = '';
+  if (m.photo) {
+    // Viber 1MB хүртэл зураг хүлээн авдаг тул 1MB-аас бага хамгийн том хэмжээг сонгоно
+    const sizes = m.photo.slice().sort((a, b) => b.width - a.width), fit = sizes.find(x => !x.file_size || x.file_size < 1000000);
+    fileId = (fit || sizes[sizes.length - 1]).file_id;
+  } else if (m.document) {
+    if (!/^image\/(jpeg|png)/.test(String(m.document.mime_type || ''))) return tgSend_(who.chat, '⚠️ Зөвхөн JPG, PNG зураг оруулна уу.');
+    fileId = m.document.file_id;
+  }
+  const add = String(m.caption || m.text || '').trim();
+  // Цомгийн зургууд зэрэг ирдэг тул бүх өөрчлөлт, картын шинэчлэлтийг түгжээн дотор хийнэ
+  const r = withLock_(() => {
+    const p = postGet_(id);
+    if (p.status !== 'draft') return null;
+    const ph = postPhotos_(p);
+    let full = false;
+    if (fileId) { if (ph.length >= 10) full = true; else { ph.push(fileId); p.photos = JSON.stringify(ph); } }
+    if (add) { p.text = fileId && p.text ? p.text + '\n\n' + add : add; p.orig = ''; } // зурагны тайлбар нэмэгдэнэ, дан текст солигдоно
+    if (p.msg) { tg_('deleteMessage', { chat_id: who.chat, message_id: Number(p.msg) }); p.msg = ''; }
+    writeRow_(SH.POST, p);
+    postShow_(p, who.chat); // шинэ карт доор харагдана
+    return { p, full };
+  });
+  if (!r) { CacheService.getScriptCache().remove('postmode_' + who.chat); return tgSend_(who.chat, 'Энэ пост аль хэдийн нийтлэгдсэн эсвэл цуцлагдсан. Шинээр эхлэх бол /post'); }
+  if (r.full) tgSend_(who.chat, 'ℹ️ Нэг постод 10 хүртэл зураг орно.');
+}
+
+/** Товчнууд: P|үйлдэл|id|нэмэлт */
+function postBtn_(who, q, a) {
+  const msg = q.message || {}, chat = String(msg.chat && msg.chat.id), act = a[1], id = a[2];
+  const ans = (t, alert) => tg_('answerCallbackQuery', { callback_query_id: q.id, text: t || '', show_alert: !!alert });
+  postNeedBoss_(who, chat);
+  if (act === 'new') { ans(); return postStart_(who, msg); }
+  if (act === 'list') { ans(); return postList_(who); }
+  const c = CacheService.getScriptCache();
+  if (act === 't') {
+    const p = withLock_(() => { const p = postGet_(id); if (p.status !== 'draft') return p; const t = postTargets_(p), i = t.indexOf(a[3]); if (i >= 0) t.splice(i, 1); else t.push(a[3]); p.targets = postChannels_().filter(x => t.indexOf(x) >= 0).join(','); writeRow_(SH.POST, p); return p; });
+    ans(); return postShow_(p, chat);
+  }
+  if (act === 'ai') {
+    ans('✨ Сайжруулж байна…');
+    const p0 = postGet_(id);
+    const out = claude_([{ type: 'text', text: 'Чи Монголын үзэсгэлэн зохион байгуулагч "Сая Мөнх" компанийн сошиал медиа менежер. Доорх постыг Facebook, Telegram, Viber-т тохиромжтой, ' +
+      'уншихад таатай, товч тодорхой болгож сайжруул. Бүх баримт (огноо, үнэ, утас, хаяг, нэр)-ыг яг хэвээр нь үлдээ, шинэ баримт бүү зохио. Тохиромжтой эмодзи, төгсгөлд 3–5 hashtag нэм. ' +
+      '1000 тэмдэгтээс бүү хэтрүүл. Зөвхөн бэлэн постын текстийг буцаа, тайлбаргүй.\n\nПост:\n' + String(p0.text || '') }], 1200).trim();
+    if (!out) fail_('AI текст гаргасангүй. Дахин оролдоно уу.');
+    const p = withLock_(() => { const p = postGet_(id); if (p.status !== 'draft') return p; if (!p.orig) p.orig = p.text; p.text = out.replace(/^["“]|["”]$/g, ''); writeRow_(SH.POST, p); return p; });
+    return postShow_(p, chat);
+  }
+  if (act === 'undo') {
+    const p = withLock_(() => { const p = postGet_(id); if (p.status === 'draft' && p.orig) { p.text = p.orig; p.orig = ''; writeRow_(SH.POST, p); } return p; });
+    ans(); return postShow_(p, chat);
+  }
+  if (act === 'x') {
+    const p = withLock_(() => { const p = postGet_(id); if (p.status === 'draft' || p.status === 'scheduled') { p.status = 'cancelled'; writeRow_(SH.POST, p); } return p; });
+    c.remove('postmode_' + chat); c.remove('posttime_' + chat); postNextUpdate_();
+    ans('Цуцаллаа.'); return postShow_(p, chat);
+  }
+  if (act === 'sch') {
+    ans();
+    const now = new Date(), tz = Session.getScriptTimeZone(), day = d => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    const at = (d, h) => { const s = day(d) + 'T' + (h < 10 ? '0' : '') + h + ':00:00'; return parseLocal_(s); };
+    const tm = new Date(now.getTime() + 864e5), opts = [];
+    if (at(now, 20) - now > 15 * 6e4) opts.push(['Өнөөдөр 20:00', at(now, 20)]);
+    opts.push(['Маргааш 09:00', at(tm, 9)], ['Маргааш 12:00', at(tm, 12)], ['Маргааш 20:00', at(tm, 20)]);
+    const rows = []; for (let i = 0; i < opts.length; i += 2) rows.push(opts.slice(i, i + 2).map(o => ({ text: o[0], callback_data: 'P|s|' + id + '|' + Math.round(o[1] / 6e4) })));
+    rows.push([{ text: '✍️ Өөр цаг бичих', callback_data: 'P|ty|' + id }, { text: '↩️ Буцах', callback_data: 'P|back|' + id }]);
+    return tg_('editMessageReplyMarkup', { chat_id: chat, message_id: msg.message_id, reply_markup: { inline_keyboard: rows } });
+  }
+  if (act === 'back') { ans(); return postShow_(postGet_(id), chat); }
+  if (act === 'ty') {
+    ans(); c.put('posttime_' + chat, id, 900);
+    return tgSend_(chat, '✍️ Нийтлэх цагаа бичнэ үү. Жишээ:\n• 19:30  (өнөөдөр)\n• маргааш 9:00\n• 11.08 19:30', { force_reply: true, input_field_placeholder: '11.08 19:30' });
+  }
+  if (act === 's') return postSchedule_(who, id, Number(a[3]) * 6e4, chat, ans);
+  if (act === 'now') {
+    ans('📢 Нийтэлж байна…');
+    c.remove('postmode_' + chat);
+    const p = withLock_(() => { const p = postGet_(id); if (p.status !== 'draft' && p.status !== 'scheduled') return null; if (!postTargets_(p).length) fail_('Ядаж нэг суваг сонгоно уу.'); p.status = 'sending'; writeRow_(SH.POST, p); return p; });
+    if (!p) return postShow_(postGet_(id), chat);
+    postShow_(p, chat);
+    return postPublish_(p.id);
+  }
+  if (act === 're') { ans('🔁 Дахин оролдож байна…'); return postPublish_(id, a[3]); }
+  if (act === 'v') { ans(); const p = postGet_(id); p.msg = ''; return postShow_(p, chat); }
+  ans();
+}
+
+/** "2026-11-08T19:30:00" → скриптийн цагийн бүсээр (Улаанбаатар) мс. */
+function parseLocal_(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s);
+  const off = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'XXX'); // +08:00
+  return Date.parse(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':00' + (off === 'Z' ? 'Z' : off));
+}
+/** Бичсэн цагийг уншина: "19:30", "маргааш 9:00", "11.08 19:30", "11/8 9". */
+function parseWhen_(text) {
+  const tz = Session.getScriptTimeZone(), now = new Date(), t = String(text).toLowerCase().replace(/\s+/g, ' ').trim();
+  const tm = /(\d{1,2})(?:[:.](\d{2}))?\s*$/.exec(t.replace(/цаг(ийн)?|-д|-нд/g, '').trim());
+  if (!tm) return 0;
+  const h = Number(tm[1]), mi = Number(tm[2] || 0);
+  if (h > 23 || mi > 59) return 0;
+  let y = Number(Utilities.formatDate(now, tz, 'yyyy')), mo = Number(Utilities.formatDate(now, tz, 'MM')), d = Number(Utilities.formatDate(now, tz, 'dd'));
+  const dm = /(\d{1,2})[./-](\d{1,2})\s+\d/.exec(t);
+  if (dm) { mo = Number(dm[1]); d = Number(dm[2]); }
+  else if (/маргааш/.test(t)) { const n = new Date(now.getTime() + 864e5); mo = Number(Utilities.formatDate(n, tz, 'MM')); d = Number(Utilities.formatDate(n, tz, 'dd')); y = Number(Utilities.formatDate(n, tz, 'yyyy')); }
+  const pad = n => (n < 10 ? '0' : '') + n;
+  let ms = parseLocal_(y + '-' + pad(mo) + '-' + pad(d) + 'T' + pad(h) + ':' + pad(mi));
+  if (dm && ms < now.getTime() - 864e5) ms = parseLocal_((y + 1) + '-' + pad(mo) + '-' + pad(d) + 'T' + pad(h) + ':' + pad(mi)); // дараа жил
+  return ms;
+}
+function postTimeTyped_(who, id, text) {
+  CacheService.getScriptCache().remove('posttime_' + who.chat);
+  const ms = parseWhen_(text);
+  if (!ms) return tgSend_(who.chat, '⚠️ Цагийг ойлгосонгүй. Жишээ: 19:30, маргааш 9:00, 11.08 19:30. "⏰ Цаг товлох"-ыг дахин дарна уу.');
+  return postSchedule_(who, id, ms, who.chat, null);
+}
+function postSchedule_(who, id, ms, chat, ans) {
+  if (ms < Date.now() + 60e3) { if (ans) ans('Энэ цаг өнгөрсөн байна.', true); else tgSend_(chat, '⚠️ Энэ цаг өнгөрсөн байна. Ирээдүйн цаг сонгоно уу.'); return; }
+  if (ms > Date.now() + 60 * 864e5) { if (ans) ans('60 хоногоос хол цаг товлох боломжгүй.', true); else tgSend_(chat, '⚠️ 60 хоногоос хол цаг товлох боломжгүй.'); return; }
+  const p = withLock_(() => {
+    const p = postGet_(id);
+    if (p.status !== 'draft' && p.status !== 'scheduled') return p;
+    if (!postTargets_(p).length) fail_('Ядаж нэг суваг сонгоно уу.');
+    p.status = 'scheduled'; p.at = new Date(ms); p.by = p.by || who.short; writeRow_(SH.POST, p);
+    log_('', '', 'пост товлосон', who.name, fmtAt_(ms));
+    return p;
+  });
+  CacheService.getScriptCache().remove('postmode_' + chat);
+  postNextUpdate_();
+  if (ans) ans('⏰ ' + fmtAt_(ms) + '-д нийтлэгдэнэ');
+  postShow_(p, chat);
+}
+
+/** 🗓 Товлосон постууд */
+function postList_(who) {
+  const list = readAll_(SH.POST).filter(p => p.status === 'scheduled').sort((a, b) => postAt_(a) - postAt_(b));
+  if (!list.length) return tgSend_(who.chat, '🗓 Товлосон пост алга.', { inline_keyboard: [[{ text: '📢 Пост оруулах', callback_data: 'P|new' }]] });
+  tgSend_(who.chat, '🗓 Товлосон постууд: ' + list.length + '\n\n' + list.slice(0, 15).map(p => '⏰ ' + fmtAt_(postAt_(p)) + ' · ' + postTargets_(p).map(c => POST_CH[c]).join(', ') + ' · ' + (p.by || '') + '\n   ' + String(p.text || '(зураг)').replace(/\s+/g, ' ').slice(0, 60)).join('\n\n'),
+    { inline_keyboard: list.slice(0, 15).map(p => [{ text: '👁 ' + fmtAt_(postAt_(p)) + ' — харах / засах', callback_data: 'P|v|' + p.id }]) });
+}
+
+/** Дараагийн товлосон постын цагийг хадгална (postRunner хүснэгт уншихгүйгээр шалгана). */
+function postNextUpdate_() {
+  const n = readAll_(SH.POST).filter(p => p.status === 'scheduled').map(postAt_).filter(Boolean).sort((a, b) => a - b)[0];
+  setProp_('POST_NEXT', n ? String(n) : '');
+}
+/** 5 минут тутам: цаг нь болсон постуудыг нийтэлнэ. */
+function postRunner() {
+  const next = Number(prop_('POST_NEXT') || 0);
+  if (!next || next > Date.now()) return;
+  try {
+    const due = withLock_(() => {
+      const d = readAll_(SH.POST).filter(p => p.status === 'scheduled' && postAt_(p) <= Date.now());
+      d.forEach(p => { p.status = 'sending'; writeRow_(SH.POST, p); });
+      return d.map(p => p.id);
+    });
+    due.forEach(id => { try { postPublish_(id, null, true); } catch (e) { reportError_('товлосон пост', e); } });
+    postNextUpdate_();
+  } catch (e) { reportError_('товлосон пост', e); }
+}
+
+/** Нийтэлнэ. only — зөвхөн нэг суваг (дахин оролдох). */
+function postPublish_(id, only, fresh) {
+  const p = postGet_(id), ph = postPhotos_(p), text = String(p.text || '').trim(), res = postResults_(p);
+  const chans = only ? [only] : postTargets_(p);
+  let blobs = null;
+  const getBlobs = () => blobs || (blobs = ph.map(fid => {
+    const f = tg_('getFile', { file_id: fid }).result || {};
+    if (!f.file_path) throw new Error('Зургийг Telegram-аас татаж чадсангүй');
+    const b = UrlFetchApp.fetch('https://api.telegram.org/file/bot' + prop_('TELEGRAM_TOKEN') + '/' + f.file_path).getBlob();
+    return b.setName('post-' + id + '-' + Math.random().toString(36).slice(2, 7) + (/\.png$/i.test(f.file_path) ? '.png' : '.jpg'));
+  }));
+  chans.forEach(c => {
+    try { res[c] = { ok: true, id: String(({ fb: postFb_, tg: postTg_, vb: postVb_ })[c](text, ph, getBlobs) || '') }; }
+    catch (e) { res[c] = { ok: false, err: String(e && (e.userMessage || e.message) || e).slice(0, 120) }; reportError_('пост ' + POST_CH[c], e); }
+  });
+  const q = withLock_(() => {
+    const q = postGet_(id), t = postTargets_(q);
+    q.results = JSON.stringify(res);
+    const ok = t.filter(c => res[c] && res[c].ok).length;
+    q.status = ok === t.length ? 'done' : ok ? 'partial' : 'failed';
+    q.publishedAt = new Date(); writeRow_(SH.POST, q);
+    log_('', '', 'пост нийтэлсэн', q.by || '', t.map(c => POST_CH[c] + (res[c] && res[c].ok ? ' ✓' : ' ✗')).join(', '));
+    return q;
+  });
+  if (fresh) q.msg = ''; // товлосон пост: цаг болоход шинэ мессежээр мэдэгдэнэ
+  postShow_(q, q.chat);
+  return q;
+}
+
+/* ---------- Telegram суваг ---------- */
+function postTg_(text, ph) {
+  const ch = prop_('TG_CHANNEL') || '@sayamunkh', chk = r => { if (!r.ok) throw new Error(r.description || 'Telegram алдаа'); return r; };
+  if (!ph.length) return chk(tg_('sendMessage', { chat_id: ch, text: text.slice(0, 4096) })).result.message_id;
+  const cap = text.length <= 1024 ? text : '';
+  let r;
+  if (ph.length === 1) r = chk(tg_('sendPhoto', { chat_id: ch, photo: ph[0], caption: cap })).result.message_id;
+  else r = chk(tg_('sendMediaGroup', { chat_id: ch, media: ph.map((f, i) => Object.assign({ type: 'photo', media: f }, i === 0 && cap ? { caption: cap } : {})) })).result[0].message_id;
+  if (!cap && text) chk(tg_('sendMessage', { chat_id: ch, text: text.slice(0, 4096) }));
+  return r;
+}
+
+/* ---------- Facebook пэйж ---------- */
+function fbCall_(path, payload) {
+  const r = UrlFetchApp.fetch(FB_API() + path, { method: 'post', payload: Object.assign({ access_token: prop_('FB_PAGE_TOKEN') }, payload), muteHttpExceptions: true });
+  const j = JSON.parse(r.getContentText() || '{}');
+  if (j.error) {
+    if (j.error.code === 190) notify_('tech', '🔑 Facebook пэйжийн холболт хүчингүй боллоо. fbConnect-ийг дахин хийнэ үү.');
+    throw new Error('Facebook: ' + (j.error.message || 'алдаа').slice(0, 100));
+  }
+  return j;
+}
+function postFb_(text, ph, getBlobs) {
+  const page = '/' + prop_('FB_PAGE_ID');
+  if (!ph.length) return fbCall_(page + '/feed', { message: text }).id;
+  const bl = getBlobs();
+  if (bl.length === 1) return fbCall_(page + '/photos', { source: bl[0], message: text }).post_id;
+  const ids = bl.map(b => fbCall_(page + '/photos', { source: b, published: 'false' }).id);
+  const pl = { message: text }; ids.forEach((x, i) => { pl['attached_media[' + i + ']'] = JSON.stringify({ media_fbid: x }); });
+  return fbCall_(page + '/feed', pl).id;
+}
+
+/* ---------- Viber суваг ---------- */
+function vbCall_(path, body) {
+  const r = UrlFetchApp.fetch('https://chatapi.viber.com/pa/' + path, { method: 'post', contentType: 'application/json', headers: { 'X-Viber-Auth-Token': prop_('VIBER_TOKEN') }, payload: JSON.stringify(body), muteHttpExceptions: true });
+  const j = JSON.parse(r.getContentText() || '{}');
+  if (j.status !== 0) throw new Error('Viber: ' + (j.status_message || 'алдаа ' + j.status));
+  return j;
+}
+/** Viber зургийг нийтийн холбоосоор авдаг тул Drive-д түр хадгалж холбоос үүсгэнэ. */
+function vbImageUrl_(blob) {
+  let f = null;
+  try { f = DriveApp.getFolderById(prop_('POST_FOLDER_ID')); } catch (e) {}
+  if (!f) { f = folder_().createFolder('Пост зургууд'); setProp_('POST_FOLDER_ID', f.getId()); }
+  const file = f.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return 'https://lh3.googleusercontent.com/d/' + file.getId();
+}
+function postVb_(text, ph, getBlobs) {
+  const from = prop_('VIBER_FROM');
+  if (!ph.length) return vbCall_('post', { from, type: 'text', text: text.slice(0, 7000) }).message_token;
+  const urls = getBlobs().map(vbImageUrl_), one = urls.length === 1 && text.length <= 700;
+  let tok = '';
+  urls.forEach((u, i) => { const r = vbCall_('post', { from, type: 'picture', text: one ? text : '', media: u, thumbnail: u }); if (!i) tok = r.message_token; });
+  if (!one && text) vbCall_('post', { from, type: 'text', text: text.slice(0, 7000) });
+  return tok;
+}
+
+/* ---------- Нэг удаагийн холболтууд (Apps Script дээр ▷ Run) ---------- */
+
+/** Facebook пэйж холбох: FB_APP_ID, FB_APP_SECRET, FB_USER_TOKEN (Graph API Explorer-оос) тохиргоонд байх ёстой. */
+function fbConnect() {
+  const id = prop_('FB_APP_ID'), sec = prop_('FB_APP_SECRET'), ut = prop_('FB_USER_TOKEN');
+  if (!id || !sec || !ut) { console.log('FB_APP_ID, FB_APP_SECRET, FB_USER_TOKEN тохиргоог нэмнэ үү.'); return; }
+  const get = u => JSON.parse(UrlFetchApp.fetch(FB_API() + u, { muteHttpExceptions: true }).getContentText());
+  const ll = get('/oauth/access_token?grant_type=fb_exchange_token&client_id=' + id + '&client_secret=' + sec + '&fb_exchange_token=' + encodeURIComponent(ut));
+  if (!ll.access_token) { console.log('АЛДАА (токен солих): ' + JSON.stringify(ll.error || ll).slice(0, 300)); return; }
+  const acc = get('/me/accounts?fields=id,name,username,access_token&limit=100&access_token=' + encodeURIComponent(ll.access_token));
+  const want = (prop_('FB_PAGE') || 'sayamunkh').toLowerCase(), pages = acc.data || [];
+  const pg = pages.find(x => String(x.username || '').toLowerCase() === want || String(x.id) === want) || (pages.length === 1 ? pages[0] : null);
+  if (!pg) { console.log('Пэйж олдсонгүй. Таны пэйжүүд: ' + pages.map(x => x.name + ' (' + (x.username || x.id) + ')').join(', ') + '\nFB_PAGE тохиргоонд зөв нэрийг бичнэ үү.'); return; }
+  setProp_('FB_PAGE_ID', pg.id); setProp_('FB_PAGE_TOKEN', pg.access_token);
+  PropertiesService.getScriptProperties().deleteProperty('FB_USER_TOKEN');
+  const dbg = get('/debug_token?input_token=' + encodeURIComponent(pg.access_token) + '&access_token=' + id + '|' + sec).data || {};
+  console.log('✅ Facebook пэйж холбогдлоо: ' + pg.name + (dbg.expires_at === 0 ? ' (хугацаагүй)' : dbg.expires_at ? ' (дуусах: ' + new Date(dbg.expires_at * 1000) + ')' : ''));
+  console.log('Зөвшөөрлүүд: ' + (dbg.scopes || []).join(', '));
+}
+
+/** Viber суваг холбох: VIBER_TOKEN тохиргоонд байх ёстой. */
+function vbConnect() {
+  if (!prop_('VIBER_TOKEN')) { console.log('VIBER_TOKEN тохиргоог нэмнэ үү.'); return; }
+  try {
+    const w = vbCall_('set_webhook', { url: (prop_('WEB_APP_URL') || WEB_URL) + '?viber=1' });
+    console.log('Webhook: ' + (w.status_message || 'ok'));
+  } catch (e) { console.log('Webhook АЛДАА: ' + e.message); }
+  const info = vbCall_('get_account_info', {});
+  const sa = (info.members || []).find(x => x.role === 'superadmin') || (info.members || [])[0];
+  if (!sa) { console.log('Сувгийн супер админ олдсонгүй.'); return; }
+  setProp_('VIBER_FROM', sa.id);
+  console.log('✅ Viber суваг холбогдлоо: ' + (info.chat_hostname || info.name || '') + ' · нийтлэгч: ' + sa.name);
+}
+
+/** Сувгуудыг шалгана: Telegram сувгийн админ эрх, Facebook, Viber. */
+function postCheck() {
+  const ch = prop_('TG_CHANNEL') || '@sayamunkh', me = tg_('getMe', {}).result || {};
+  const m = tg_('getChatMember', { chat_id: ch, user_id: me.id });
+  console.log('Telegram ' + ch + ': ' + (m.ok && /administrator|creator/.test(m.result.status) ? '✅ бот админ' : '❌ ботыг сувгийн админ болгоно уу (' + (m.description || (m.result && m.result.status)) + ')'));
+  if (prop_('FB_PAGE_TOKEN')) { try { const j = JSON.parse(UrlFetchApp.fetch(FB_API() + '/' + prop_('FB_PAGE_ID') + '?fields=name&access_token=' + prop_('FB_PAGE_TOKEN'), { muteHttpExceptions: true }).getContentText()); console.log('Facebook: ' + (j.name ? '✅ ' + j.name : '❌ ' + JSON.stringify(j.error).slice(0, 150))); } catch (e) { console.log('Facebook: ❌ ' + e.message); } }
+  else console.log('Facebook: тохируулаагүй (fbConnect)');
+  if (prop_('VIBER_TOKEN')) { try { const i = vbCall_('get_account_info', {}); console.log('Viber: ✅ ' + (i.chat_hostname || i.name || '') + (prop_('VIBER_FROM') ? '' : ' — vbConnect ажиллуулна уу')); } catch (e) { console.log('Viber: ❌ ' + e.message); } }
+  else console.log('Viber: тохируулаагүй (VIBER_TOKEN)');
 }

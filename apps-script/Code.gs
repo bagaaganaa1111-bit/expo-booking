@@ -391,10 +391,10 @@ function apiBook_(req) {
     expireHolds_(e.id);
     const booths = boothsOf_(e.id), cats = catsOf_(e.id);
     const b = booths.find(x => String(x.boothId) === String(req.boothId));
-    if (!b) fail_('Лангуу олдсонгүй. Хуудсаа шинэчилнэ үү.');
-    if (b.status !== 'free') fail_('Уучлаарай, ' + b.code + ' лангууг сая өөр байгууллага захиаллаа. Өөр лангуу сонгоно уу.');
+    if (!b) fail_('Талбай олдсонгүй. Хуудсаа шинэчилнэ үү.');
+    if (b.status !== 'free') fail_('Уучлаарай, ' + b.code + ' талбайг сая өөр байгууллага захиаллаа. Өөр талбай сонгоно уу.');
     if (booths.filter(x => x.status === 'held' && String(x.tel) === tel).length >= MAX_HOLDS_PER_PHONE)
-      fail_('Нэг утасны дугаараар төлбөр төлөөгүй ' + MAX_HOLDS_PER_PHONE + '-аас олон лангуу барих боломжгүй. Менежертэй холбогдоно уу.');
+      fail_('Нэг утасны дугаараар төлбөр төлөөгүй ' + MAX_HOLDS_PER_PHONE + '-аас олон талбай барих боломжгүй. Менежертэй холбогдоно уу.');
     const price = listPrice_(b, cats), products = cleanProducts_(req.products, req.other, e);
     if (productsOf_(e).length && !products) fail_('Юу худалдахаа сонгоно уу.');
     Object.assign(b, { status: 'held', price, org, person, tel, mail, products, heldAt: new Date(), updatedAt: new Date(), updatedBy: 'оролцогч' });
@@ -405,7 +405,7 @@ function apiBook_(req) {
     return { e, b, price };
   });
   const adv = Math.round(res.price * res.e.advancePct / 100);
-  notify_('ops', '🟨 Шинэ захиалга — ' + res.e.name + '\nЛангуу: ' + res.b.code + ' (' + res.b.m2 + ' м²)\n' + org + (person ? ', ' + person : '') + '\n📞 ' + tel + (mail ? '\n✉️ ' + mail : '') +
+  notify_('ops', '🟨 Шинэ захиалга — ' + res.e.name + '\nТалбай: ' + res.b.code + ' (' + res.b.m2 + ' м²)\n' + org + (person ? ', ' + person : '') + '\n📞 ' + tel + (mail ? '\n✉️ ' + mail : '') +
     '\nДүн: ' + fmt_(res.price) + '₮, урьдчилгаа ' + fmt_(adv) + '₮\n' + res.e.holdHours + ' цагийн дотор урьдчилгаа орохгүй бол автоматаар суллагдана.', { buttons: tgButtons_(res.e, res.b) });
   return { booking: { code: String(res.b.code), price: res.price, advance: adv, holdHours: res.e.holdHours, org, payInfo: String(res.e.payInfo || '') } };
 }
@@ -492,10 +492,10 @@ function apiUpdateExpo_(req, who) {
       if (!{ draft: 1, open: 1, closed: 1 }[req.status]) fail_('Төлөв буруу.');
       if (req.status === 'open') {
         const bs = boothsOf_(e.id);
-        if (!e.imageId || !bs.length) fail_('Эхлээд талбайн зураг оруулж, лангуунуудыг хадгална уу.');
+        if (!e.imageId || !bs.length) fail_('Эхлээд байршлын зураг оруулж, талбайнуудыг хадгална уу.');
         const cats = catsOf_(e.id);
         const noPrice = bs.filter(b => !listPrice_(b, cats)).map(b => b.code);
-        if (noPrice.length) fail_('Үнэгүй лангуу байна: ' + noPrice.slice(0, 8).join(', ') + (noPrice.length > 8 ? '…' : '') + '. м² болон салбарын үнийг шалгана уу.');
+        if (noPrice.length) fail_('Үнэгүй талбай байна: ' + noPrice.slice(0, 8).join(', ') + (noPrice.length > 8 ? '…' : '') + '. м² болон салбарын үнийг шалгана уу.');
       }
       e.status = req.status;
       log_(e.id, '', 'төлөв: ' + req.status, who.name, '');
@@ -538,7 +538,7 @@ function apiUploadImage_(req, who) {
   if (bytes.length > 6 * 1024 * 1024) fail_('Зураг хэт том байна.');
   return withLock_(() => {
     const e = findExpo_(req.id);
-    if (boothsOf_(e.id).some(b => BOOKED[b.status])) fail_('Захиалгатай лангуу байгаа тул зургийг солих боломжгүй.');
+    if (boothsOf_(e.id).some(b => BOOKED[b.status])) fail_('Захиалгатай талбай байгаа тул зургийг солих боломжгүй.');
     const file = folder_().createFile(Utilities.newBlob(bytes, m[1], 'talbai-' + e.id + '-' + Date.now() + '.' + (m[2] === 'jpeg' ? 'jpg' : m[2])));
     const old = e.imageId;
     e.imageId = file.getId(); e.imgW = num_(req.w); e.imgH = num_(req.h);
@@ -585,10 +585,10 @@ const DETECT_PROMPT =
 
 function apiDetect_(req, who) {
   const key = prop_('CLAUDE_API_KEY');
-  if (!key) fail_('Зураг таних тохиргоо хийгдээгүй байна. Лангуунуудыг "+ Лангуу нэмэх"-ээр гараар тэмдэглэнэ үү.');
+  if (!key) fail_('Зураг таних тохиргоо хийгдээгүй байна. Талбайнуудыг "+ Талбай нэмэх"-ээр гараар тэмдэглэнэ үү.');
   const e = findExpo_(req.id);
-  if (!e.imageId) fail_('Эхлээд талбайн зураг оруулна уу.');
-  if (boothsOf_(e.id).some(b => BOOKED[b.status])) fail_('Захиалгатай лангуу байгаа тул дахин танихгүй. Гараар засна уу.');
+  if (!e.imageId) fail_('Эхлээд байршлын зураг оруулна уу.');
+  if (boothsOf_(e.id).some(b => BOOKED[b.status])) fail_('Захиалгатай талбай байгаа тул дахин танихгүй. Гараар засна уу.');
   const blob = DriveApp.getFileById(e.imageId).getBlob();
   const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
@@ -609,13 +609,13 @@ function apiDetect_(req, who) {
   }
   const text = (JSON.parse(resp.getContentText()).content || []).filter(c => c.type === 'text').map(c => c.text).join('');
   const parsed = parseDetect_(text);
-  if (!parsed.booths.length) fail_('Зураг дээрээс лангуу олдсонгүй. Илүү тод зураг оруулах эсвэл гараар тэмдэглэнэ үү.');
+  if (!parsed.booths.length) fail_('Зураг дээрээс талбай олдсонгүй. Илүү тод зураг оруулах эсвэл гараар тэмдэглэнэ үү.');
   withLock_(() => {
     if (boothsOf_(e.id).some(b => BOOKED[b.status])) fail_('Энэ хооронд захиалга орсон тул хадгалсангүй.');
     replaceExpoRows_(SH.CAT, e.id, parsed.cats.map(c => ({ expoId: e.id, catId: c.id, name: c.name, color: c.color, price: c.price })));
     replaceExpoRows_(SH.BOOTH, e.id, parsed.booths.map(b => Object.assign({ expoId: e.id, boothId: b.id, status: 'free', updatedAt: new Date(), updatedBy: 'автомат таних' }, b)));
   });
-  log_(e.id, '', 'автоматаар таньсан', who.name, parsed.booths.length + ' лангуу');
+  log_(e.id, '', 'автоматаар таньсан', who.name, parsed.booths.length + ' талбай');
   return { found: parsed.booths.length };
 }
 
@@ -648,7 +648,7 @@ function parseDetect_(text) {
 
 function apiSaveBooths_(req, who) {
   const inB = Array.isArray(req.booths) ? req.booths : [], inC = Array.isArray(req.cats) ? req.cats : [];
-  if (inB.length > 2000) fail_('Лангуу хэт олон байна.');
+  if (inB.length > 2000) fail_('Талбай хэт олон байна.');
   return withLock_(() => {
     const e = findExpo_(req.id), cur = boothsOf_(e.id), byId = {};
     cur.forEach(b => { byId[b.boothId] = b; });
@@ -657,7 +657,7 @@ function apiSaveBooths_(req, who) {
     if (req.baseVer && String(req.baseVer) !== layoutVer_(curCats, cur)) {
       const last = readAll_(SH.LOG).filter(l => String(l.expoId) === String(e.id) && /талбай хадгалсан|автоматаар таньсан|зураг оруулсан/.test(l.action)).pop();
       const who2 = last ? last.by + (last.time instanceof Date ? ' (' + Utilities.formatDate(last.time, Session.getScriptTimeZone(), 'HH:mm') + ')' : '') : 'Өөр хүн';
-      fail_('CONFLICT: Энэ хооронд ' + who2 + ' талбайн зургийг хадгалсан байна. Таны өөрчлөлт хадгалагдсангүй.');
+      fail_('CONFLICT: Энэ хооронд ' + who2 + ' байршлын зургийг хадгалсан байна. Таны өөрчлөлт хадгалагдсангүй.');
     }
     const cats = !isBoss_(who) && curCats.length ? curCats
       : inC.map((c, i) => ({ expoId: e.id, catId: str_(c.id, 20) || ('c' + i), name: str_(c.name, 60) || ('Салбар ' + (i + 1)), color: str_(c.color, 9) || PALETTE[i % PALETTE.length], price: isBoss_(who) ? Math.max(0, num_(c.price)) : 0 }));
@@ -666,7 +666,7 @@ function apiSaveBooths_(req, who) {
     const codes = {}, out = [];
     inB.forEach(x => {
       const old = byId[x.id], code = str_(x.code, 12).toUpperCase();
-      if (!code) fail_('Дугааргүй лангуу байна.');
+      if (!code) fail_('Дугааргүй талбай байна.');
       if (codes[code]) fail_(code + ' дугаар давхардсан байна.');
       codes[code] = 1;
       if (old && BOOKED[old.status]) {
@@ -685,7 +685,7 @@ function apiSaveBooths_(req, who) {
     if (missing.length) fail_(missing.map(b => b.code).join(', ') + ' захиалгатай тул устгах боломжгүй.');
     replaceExpoRows_(SH.CAT, e.id, cats);
     replaceExpoRows_(SH.BOOTH, e.id, out.map(o => { const c = Object.assign({}, o); delete c._row; return c; }));
-    log_(e.id, '', 'талбай хадгалсан', who.name, out.length + ' лангуу');
+    log_(e.id, '', 'талбай хадгалсан', who.name, out.length + ' талбай');
     bump_(e);
     return { saved: out.length };
   });
@@ -704,9 +704,9 @@ function changeStatus_(req, who) {
   const r = withLock_(() => {
     const e = findExpo_(req.id), cats = catsOf_(e.id);
     const b = boothsOf_(e.id).find(x => String(x.boothId) === String(req.boothId));
-    if (!b) fail_('Лангуу олдсонгүй.');
+    if (!b) fail_('Талбай олдсонгүй.');
     const prev = b.status || 'free';
-    if (req.expect && String(req.expect) !== prev) fail_(b.code + ' лангууны төлөвийг сая өөр хүн өөрчилсөн байна (одоо: ' + ({ free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' }[prev]) + '). Мэдээлэл шинэчлэгдлээ, дахин шалгана уу.');
+    if (req.expect && String(req.expect) !== prev) fail_(b.code + ' талбайн төлөвийг сая өөр хүн өөрчилсөн байна (одоо: ' + ({ free: 'Сул', held: 'Түр барьсан', adv: 'Урьдчилгаа төлсөн', paid: 'Бүрэн төлсөн' }[prev]) + '). Мэдээлэл шинэчлэгдлээ, дахин шалгана уу.');
     if (st === 'free') {
       if (prev === 'free') return { e, b, prev, same: true };
       const org = b.org; partSave_(e, b, 'free', who.name); clearBooking_(b); b.updatedAt = new Date(); b.updatedBy = who.name; writeRow_(SH.BOOTH, b);
@@ -733,7 +733,7 @@ function changeStatus_(req, who) {
 function statusNotify_(r, who, skipChat) {
   if (r.same) return;
   const t = { free: '⬜ Цуцлагдсан', held: '🟨 Утсаар захиалга', adv: '🟧 Урьдчилгаа орсон', paid: '🟥 Бүрэн төлсөн' }[r.st];
-  notify_('ops', t + ' — ' + r.e.name + '\nЛангуу: ' + r.b.code + '\n' + (r.org || r.b.org || '') + (r.b.tel ? '\n📞 ' + r.b.tel : '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')',
+  notify_('ops', t + ' — ' + r.e.name + '\nТалбай: ' + r.b.code + '\n' + (r.org || r.b.org || '') + (r.b.tel ? '\n📞 ' + r.b.tel : '') + '\nБүртгэсэн: ' + who.name + ' (' + ROLE_NAME[who.role] + ')',
     { buttons: tgButtons_(r.e, r.b), skip: skipChat });
 }
 
@@ -1026,7 +1026,7 @@ function testTelegram() {
   const set = { 'Менежерийн групп (TELEGRAM_CHAT)': prop_('TELEGRAM_CHAT'), 'Захирал (TELEGRAM_DIRECTOR)': prop_('TELEGRAM_DIRECTOR'), 'Систем админ (TELEGRAM_ADMIN)': prop_('TELEGRAM_ADMIN') };
   Object.keys(set).forEach(k => {
     if (!set[k]) { console.log(k + ': тохируулаагүй'); return; }
-    const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + prop_('TELEGRAM_TOKEN') + '/sendMessage', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ chat_id: set[k], text: '✅ Лангуу захиалгын систем холбогдлоо — ' + k }) });
+    const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + prop_('TELEGRAM_TOKEN') + '/sendMessage', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ chat_id: set[k], text: '✅ Талбайн захиалгын систем холбогдлоо — ' + k }) });
     console.log(k + ': ' + (r.getResponseCode() === 200 ? 'амжилттай' : 'АЛДАА ' + r.getContentText().slice(0, 150)));
   });
 }
@@ -1205,7 +1205,7 @@ function tgUpdate_(u, p) {
   const lid = m.reply_to_message ? cache.get('leadmsg_' + who.chat + '_' + m.reply_to_message.message_id) : '';
   if (lid) return tgLeadFix_(who, lid, text);
   const fk = 'tgf_' + who.chat + '_' + (m.from && m.from.id);
-  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу.' + (m.chat.type === 'private' ? '\n\n📸 Байгууллагын Facebook "Танилцуулга" хэсэг, нэрийн хуудасны зургийг энд явуулбал оролцогчдын санд бүртгэнэ.' : ''), { inline_keyboard: tgMenuKb_(who) });
+  if (cmd === '/start' || cmd === '/menu') return tgSend_(who.chat, 'Сая Мөнх · Үзэсгэлэнгийн талбайн захиалга\nДоорх товчийг дарна уу.' + (m.chat.type === 'private' ? '\n\n📸 Байгууллагын Facebook "Танилцуулга" хэсэг, нэрийн хуудасны зургийг энд явуулбал оролцогчдын санд бүртгэнэ.' : ''), { inline_keyboard: tgMenuKb_(who) });
   const hit = TG_MENU.find(x => text === x[0] || cmd === '/' + x[1]);
   if (hit) return tgMenuDo_(hit[1], who, m.from, m.message_id);
   const toBot = m.reply_to_message && m.reply_to_message.from && m.reply_to_message.from.is_bot;
@@ -1270,9 +1270,9 @@ function tgDue_(who) {
     });
   });
   if (!count) return tgSend_(who.chat, '💰 Авлага алга. Бүх захиалга бүрэн төлөгдсөн ✅', { inline_keyboard: tgMenuKb_() });
-  let text = '💰 Авлага — ' + count + ' лангуу' + (who.role === 'admin' ? ', нийт ' + fmt_(total) + '₮' : '') + '\n🟨 түр барьсан · 🟧 урьдчилгаа төлсөн\n' + lines.join('\n');
+  let text = '💰 Авлага — ' + count + ' талбай' + (who.role === 'admin' ? ', нийт ' + fmt_(total) + '₮' : '') + '\n🟨 түр барьсан · 🟧 урьдчилгаа төлсөн\n' + lines.join('\n');
   if (text.length > 3800) text = text.slice(0, 3700) + '\n…\nБүтэн жагсаалтыг ажилтны хуудаснаас харна уу.';
-  tgSend_(who.chat, text + '\n\nЛангууг товчоор шинэчлэх бол 🔎 Хайх ашиглана уу.', { inline_keyboard: tgMenuKb_() });
+  tgSend_(who.chat, text + '\n\nТалбайг товчоор шинэчлэх бол 🔎 Хайх ашиглана уу.', { inline_keyboard: tgMenuKb_() });
 }
 
 function tgSoon_(who) {
@@ -1280,9 +1280,9 @@ function tgSoon_(who) {
   tgData_().forEach(d => d.booths.forEach(b => {
     if (b.status === 'held' && deadline_(d.e, b) - now < 24 * 3600e3) list.push({ d, b, t: deadline_(d.e, b) });
   }));
-  if (!list.length) return tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах лангуу алга ✅', { inline_keyboard: tgMenuKb_() });
+  if (!list.length) return tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах талбай алга ✅', { inline_keyboard: tgMenuKb_() });
   list.sort((a, b) => a.t - b.t);
-  tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах: ' + list.length + ' лангуу' + (list.length > 10 ? ' (эхний 10)' : ''));
+  tgSend_(who.chat, '⏰ 24 цагийн дотор суллагдах: ' + list.length + ' талбай' + (list.length > 10 ? ' (эхний 10)' : ''));
   list.slice(0, 10).forEach(x => tgSend_(who.chat, tgCard_(x.d.e, x.b, x.d.cats), { inline_keyboard: tgButtons_(x.d.e, x.b) }));
 }
 
@@ -1675,7 +1675,7 @@ function tgOrgs_(who, msg, a) {
   const owe = r => r['Төлөв'] === 'Түр барьсан' ? num_(r['Дүн']) : r['Төлөв'] === 'Урьдчилгаа төлсөн' ? Math.round(num_(r['Дүн']) * (1 - (adv[r.expoId] || 0.5))) : 0;
   const boss = who.role === 'admin', sum = found.reduce((t, r) => t + (S === 'due' ? owe(r) : num_(r['Дүн'])), 0);
   const money = boss && found.length && S !== 'off' ? ' · ' + (S === 'due' ? 'үлдэгдэл ' : '') + fmt_(sum) + '₮' : '';
-  const head = '🗂 ' + ename(X) + ' · ' + pname + ' · ' + (OF[S] || OF.act)[0] + '\n' + found.length + ' лангуу, ' + Object.keys(orgs).length + ' байгууллага' + money;
+  const head = '🗂 ' + ename(X) + ' · ' + pname + ' · ' + (OF[S] || OF.act)[0] + '\n' + found.length + ' талбай, ' + Object.keys(orgs).length + ' байгууллага' + money;
   const kb = [[{ text: '🔁 Шүүлт солих', callback_data: 'o|p|' + X + '|' + P }, home]], part = sheetUrl_(SH.PART);
   if (part) kb.push([{ text: '📑 Бүтэн жагсаалт (Sheets)', url: part }]);
   if (!found.length) return show(head + '\n\nИйм оролцогч олдсонгүй.', kb);
@@ -1746,8 +1746,8 @@ function tgButtonsFrom_(expoId, boothId, st) { return tgButtons_({ id: expoId },
 function extendHold_(expoId, boothId, who) {
   const r = withLock_(() => {
     const e = findExpo_(expoId), b = boothsOf_(e.id).find(x => String(x.boothId) === String(boothId));
-    if (!b) fail_('Лангуу олдсонгүй.');
-    if (b.status !== 'held') fail_(b.code + ' лангуу одоо "' + ST_NAME[b.status || 'free'] + '" төлөвтэй тул сунгах боломжгүй.');
+    if (!b) fail_('Талбай олдсонгүй.');
+    if (b.status !== 'held') fail_(b.code + ' талбай одоо "' + ST_NAME[b.status || 'free'] + '" төлөвтэй тул сунгах боломжгүй.');
     const hold = e.holdHours * 3600e3, from = Math.max(heldMs_(b), Date.now() - hold); // дууссан бол одооноос
     b.heldAt = new Date(from + 24 * 3600e3);
     b.updatedAt = new Date(); b.updatedBy = who.name;
@@ -1772,7 +1772,7 @@ function tgConnect() {
   console.log(r.ok ? '✅ Товчнууд идэвхжлээ.' : 'АЛДАА: ' + JSON.stringify(r).slice(0, 200));
   tgCommands_();
   ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
-    const s = tgSend_(chat, '✅ Лангуу захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
+    const s = tgSend_(chat, '✅ Талбайн захиалгын товчнууд идэвхжлээ.\nШинэ захиалгын мэдэгдлийн доор төлбөр бүртгэх товч гарна. Цэсийг доороос эсвэл "Menu" товчоор нээнэ.', { inline_keyboard: tgMenuKb_() });
     console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
   });
   Utilities.sleep(1500);
@@ -1809,7 +1809,7 @@ function tgCommands_() {
     { command: 'menu', description: 'Үндсэн цэс' },
     { command: 'status', description: 'Өнөөдрийн байдал' },
     { command: 'due', description: 'Авлага' },
-    { command: 'soon', description: '24 цагт суллагдах лангуу' },
+    { command: 'soon', description: '24 цагт суллагдах талбай' },
     { command: 'find', description: 'Утас, нэрээр хайх' },
     { command: 'orgs', description: 'Оролцогчид — шүүж харах' },
     { command: 'post', description: 'Facebook, Telegram, Viber-т пост оруулах' },
@@ -1858,7 +1858,7 @@ function apiRelayPair_(req) {
 /** Цэсийг бүх зөвшөөрөгдсөн чат руу илгээнэ (webhook-д хүрэхгүй, зуучлагчтай үед ашиглана). */
 function tgSendMenu() {
   ids_('TELEGRAM_DIRECTOR').concat(ids_('TELEGRAM_ADMIN'), ids_('TELEGRAM_CHAT'), ids_('TELEGRAM_USERS')).filter((c, i, a) => a.indexOf(c) === i).forEach(chat => {
-    const s = tgSend_(chat, 'Сая Мөнх · Лангуу захиалга\nДоорх товчийг дарна уу. Цэсийг дахин нээх бол /menu гэж бичнэ.', { inline_keyboard: tgMenuKb_(tgWho_(chat, null)) });
+    const s = tgSend_(chat, 'Сая Мөнх · Үзэсгэлэнгийн талбайн захиалга\nДоорх товчийг дарна уу. Цэсийг дахин нээх бол /menu гэж бичнэ.', { inline_keyboard: tgMenuKb_(tgWho_(chat, null)) });
     console.log(chat + ': ' + (s.ok ? 'цэс илгээлээ' : 'АЛДАА ' + JSON.stringify(s).slice(0, 150)));
   });
 }
@@ -2356,10 +2356,10 @@ function postCtx_(expoId) {
   };
 }
 const POST_TPL = [
-  ['open', '🏪 Лангуу захиалга нээлттэй', 'Оролцогч', c => `🛍 ${c.name.toUpperCase()} — лангуу захиалга нээлттэй!\n\n${c.about}\n\n📅 ${c.dates}\n📍 ${c.place}\n\nТалбайн зургаас сул лангуугаа өөрөө сонгоод 1 минутад захиалаарай 👇\n${c.link}\n\nЛангуу тоо хязгаарлагдмал тул эрт захиалсан нь сайн байршлаа сонгоно.\n📞 ${c.phone}\n\n${c.tag} #ЛангууЗахиалга`],
-  ['why', '💡 Яагаад оролцох вэ', 'Оролцогч', c => `💡 ${c.name}-д яагаад оролцох вэ?\n\n✅ Хэдэн өдрийн турш шууд борлуулалт хийнэ\n✅ Шинэ худалдан авагчдад бүтээгдэхүүнээ танилцуулна\n✅ Бусад байгууллагатай танилцаж хамтран ажиллах боломж\n✅ Захиалснаас хойш бид танай брэндийг сошиалд сурталчилна\n\n📅 ${c.dates} · 📍 ${c.place}\n👉 Лангуу захиалах: ${c.link}\n\n${c.tag}`],
+  ['open', '🏪 Үзэсгэлэнгийн талбайн захиалга нээлттэй', 'Оролцогч', c => `🛍 ${c.name.toUpperCase()} — үзэсгэлэнгийн талбайн захиалга нээлттэй!\n\n${c.about}\n\n📅 ${c.dates}\n📍 ${c.place}\n\nБайршлын зургаас сул талбайгаа өөрөө сонгоод 1 минутад захиалаарай 👇\n${c.link}\n\nТалбайн тоо хязгаарлагдмал тул эрт захиалсан нь сайн байршлаа сонгоно.\n📞 ${c.phone}\n\n${c.tag} #ТалбайЗахиалга`],
+  ['why', '💡 Яагаад оролцох вэ', 'Оролцогч', c => `💡 ${c.name}-д яагаад оролцох вэ?\n\n✅ Хэдэн өдрийн турш шууд борлуулалт хийнэ\n✅ Шинэ худалдан авагчдад бүтээгдэхүүнээ танилцуулна\n✅ Бусад байгууллагатай танилцаж хамтран ажиллах боломж\n✅ Захиалснаас хойш бид танай брэндийг сошиалд сурталчилна\n\n📅 ${c.dates} · 📍 ${c.place}\n👉 Үзэсгэлэнгийн талбай захиалах: ${c.link}\n\n${c.tag}`],
   ['cats', '🗂 Ямар бүтээгдэхүүн', 'Оролцогч', c => `🏪 Та эдгээрийн нэгийг зардаг уу? Тэгвэл ${c.name} танд зориулагдсан!\n\n${c.prods.length ? c.prods.join('\n') : '[бүтээгдэхүүний ангиллууд]'}\n\nЗахиалахдаа бүтээгдэхүүнийхээ төрлийг сонгоно.\n👉 ${c.link}\n\n${c.tag}`],
-  ['last', '⏳ Сүүлчийн боломж', 'Оролцогч', c => `⏳ ${c.name} нээгдэхэд ${c.days > 0 ? c.days + ' хоног' : 'удахгүй'} үлдлээ!\n\n${!c.free ? 'Лангуу бараг дүүрлээ.' : c.free <= 15 ? 'Ердөө ' + c.free + ' сул лангуу үлдлээ.' : 'Сайн байршлууд хурдан захиалагдаж байна.'} Лангууны захиалга ${c.closeDate}-нд хаагдана.\n\n✔️ Захиалсны дараа лангуу ${c.e.holdHours} цаг танд барьцаалагдана\n✔️ Урьдчилгаа төлснөөр баталгаажна\n\n👉 ${c.link}\n📞 ${c.phone}\n\n${c.tag}`],
+  ['last', '⏳ Сүүлчийн боломж', 'Оролцогч', c => `⏳ ${c.name} нээгдэхэд ${c.days > 0 ? c.days + ' хоног' : 'удахгүй'} үлдлээ!\n\n${!c.free ? 'Талбай бараг дүүрлээ.' : c.free <= 15 ? 'Ердөө ' + c.free + ' сул талбай үлдлээ.' : 'Сайн байршлууд хурдан захиалагдаж байна.'} Талбайн захиалга ${c.closeDate}-нд хаагдана.\n\n✔️ Захиалсны дараа талбай ${c.e.holdHours} цаг танд барьцаалагдана\n✔️ Урьдчилгаа төлснөөр баталгаажна\n\n👉 ${c.link}\n📞 ${c.phone}\n\n${c.tag}`],
   ['teaser', '🎉 Анонс', 'Үзэгч', c => `🎉 ${c.name.toUpperCase()} удахгүй!\n\n${c.about}\n\n📅 ${c.dates}\n⏰ ${c.hours}\n📍 ${c.place}${c.fee ? '\n🎟 ' + c.fee : ''}\n\nНайздаа tag хийгээд хамтдаа ирээрэй 👭\n\n${c.tag}`],
   ['buy', '🛒 Юу худалдаж авах вэ', 'Үзэгч', c => `🛒 ${c.name}-д юу худалдаж авах вэ?\n\n${c.prods.length ? c.prods.slice(0, 8).join('\n') : '[бүтээгдэхүүний ангиллууд]'}\n\nБүгд нэг дор, үзэсгэлэнгийн үнээр 👌\n📅 ${c.dates} · 📍 ${c.place}\n\n${c.tag}`],
   ['orgs', '🤝 Оролцогч байгууллагууд', 'Үзэгч', c => `🤝 ${c.name}-д таныг угтах байгууллагуудаас:\n\n${c.orgs.length ? c.orgs.slice(0, 12).map(o => '• ' + o.name + (o.what ? ' — ' + o.what : '')).join('\n') + (c.orgs.length > 12 ? '\n… болон бусад ' + (c.orgs.length - 12) + ' байгууллага' : '') : '[оролцогч байгууллагууд — урьдчилгаа төлсөн захиалга алга]'}\n\nТаны дуртай брэнд аль нь вэ? Сэтгэгдэлдээ бичээрэй 👇\n📅 ${c.dates} · 📍 ${c.place}\n\n${c.tag}`],

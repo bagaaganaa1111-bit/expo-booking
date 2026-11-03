@@ -3,29 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Лангуу захиалах</title>
-<meta name="description" content="Үзэсгэлэнгийн талбайн зургаас сул лангуугаа сонгож онлайнаар захиалаарай.">
+<title>Үзэсгэлэнгийн талбай захиалах</title>
+<meta name="description" content="Үзэсгэлэнгийн байршлын зургаас сул талбайгаа сонгож онлайнаар захиалаарай.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div class="wrap">
   <header>
-    <p class="eyebrow" id="dates">Лангуу захиалга</p>
-    <h1 id="title">Үзэсгэлэнгийн лангуу захиалах</h1>
-    <p class="lead" id="lead">Талбайн зургаас ногоон хүрээтэй сул лангуугаа сонгоод 1 минутад захиална.</p>
+    <p class="eyebrow" id="dates">Талбайн захиалга</p>
+    <h1 id="title">Үзэсгэлэнгийн талбай захиалах</h1>
+    <p class="lead" id="lead">Байршлын зургаас ногоон хүрээтэй сул талбайгаа сонгоод 1 минутад захиална.</p>
     <p class="hint" id="about" hidden style="margin-top:8px;max-width:62ch;font-size:14px;white-space:pre-line"></p>
   </header>
 
   <section id="home" hidden style="display:flex;flex-direction:column;gap:12px"></section>
 
-  <div class="loading" id="loading"><span class="spin"></span><span>Талбайн зургийг ачааллаж байна…</span></div>
+  <div class="loading" id="loading"><span class="spin"></span><span>Байршлын зургийг ачааллаж байна…</span></div>
   <div class="card" id="fatal" hidden><h2>Хуудсыг нээж чадсангүй</h2><p class="hint" id="fatalMsg"></p><div><button class="btn" id="retry">Дахин оролдох</button></div></div>
 
   <section class="card" id="pick" hidden aria-labelledby="pickH">
-    <div class="row spread"><h2 id="pickH">Лангуугаа сонгоно уу</h2><span class="hint"><b id="freeN" style="color:var(--fg)"></b> сул лангуу</span></div>
+    <div class="row spread"><h2 id="pickH">Талбайгаа сонгоно уу</h2><span class="hint"><b id="freeN" style="color:var(--fg)"></b> сул талбай</span></div>
     <div class="chips" id="cats" role="group" aria-label="Салбараар шүүх"></div>
-    <div class="frame" id="frame"><div class="plan pub" id="plan"><img id="img" alt="Үзэсгэлэнгийн талбайн зураг"><div class="layer" id="layer"></div></div></div>
+    <div class="frame" id="frame"><div class="plan pub" id="plan"><img id="img" alt="Үзэсгэлэнгийн байршлын зураг"><div class="layer" id="layer"></div></div></div>
     <div class="row spread">
       <div class="legend"><span><i style="border-color:var(--free);background:color-mix(in srgb,var(--free) 22%,transparent)"></i>Сул — дарж захиална</span><span><i style="border-color:var(--held);background:color-mix(in srgb,var(--held) 40%,transparent)"></i>Түр барьсан</span><span><i style="border-color:var(--paid);background:color-mix(in srgb,var(--paid) 40%,transparent)"></i>Захиалагдсан</span></div>
       <label class="f" style="flex-direction:row;align-items:center;gap:8px">Томруулах <input id="zoom" type="range" min="100" max="320" step="10" value="100"></label>
@@ -37,9 +37,9 @@
   <section class="card" id="how" hidden>
     <h2>Хэрхэн захиалах вэ</h2>
     <ol class="steps">
-      <li><b>Лангуугаа сонгоно</b>Ногоон хүрээтэй лангуу дээр дарахад хэмжээ, салбар, үнэ харагдана.</li>
+      <li><b>Талбайгаа сонгоно</b>Ногоон хүрээтэй талбай дээр дарахад хэмжээ, салбар, үнэ харагдана.</li>
       <li><b>Мэдээллээ оруулна</b>Байгууллагын нэр, утсаа оруулаад "Захиалах" дарна.</li>
-      <li><b id="hHold">48 цаг барьцаалагдана</b>Лангуу танд түр барьцаалагдаж, менежер тантай холбогдоно.</li>
+      <li><b id="hHold">48 цаг барьцаалагдана</b>Талбай танд түр барьцаалагдаж, менежер тантай холбогдоно.</li>
       <li><b id="hAdv">Урьдчилгаа төлнө</b>Урьдчилгаа төлөхөд захиалга баталгаажна.</li>
     </ol>
   </section>
@@ -62,10 +62,10 @@ const fmtDate = d => d ? d.replace(/-/g, ".") : "";
 const range = (a, b) => a && b ? fmtDate(a) + " – " + (a.slice(0, 4) === b.slice(0, 4) ? fmtDate(b).slice(5) : fmtDate(b)) : fmtDate(a || b);
 async function home() {
   const org = window.EXPO_ORG || "";
-  document.title = (org ? org + " — " : "") + "Лангуу захиалга";
-  $("#dates").textContent = org || "Лангуу захиалга"; $("#title").textContent = "Үзэсгэлэнгийн лангуу захиалга";
+  document.title = (org ? org + " — " : "") + "Талбайн захиалга";
+  $("#dates").textContent = org || "Талбайн захиалга"; $("#title").textContent = "Үзэсгэлэнгийн талбайн захиалга";
   const lt = document.querySelector("#loading span:last-child"); if (lt) lt.textContent = "Ачааллаж байна…";
-  $("#lead").textContent = "Оролцох үзэсгэлэнгээ сонгоод талбайн зургаас сул лангуугаа захиална уу.";
+  $("#lead").textContent = "Оролцох үзэсгэлэнгээ сонгоод байршлын зургаас сул талбайгаа захиална уу.";
   try {
     const r = await api("list");
     const open = r.expos.filter(x => x.open);
@@ -78,7 +78,7 @@ async function home() {
         '<div class="expo-body"><span class="pill" style="align-self:flex-start;color:var(--' + (x.open ? "free" : "muted") + ');border-color:var(--' + (x.open ? "free" : "line") + ')">' + (x.open ? "Захиалга нээлттэй" : "Удахгүй") + '</span>' +
         '<h2 style="font-size:19px">' + esc(x.name) + '</h2><p class="hint">' + esc([range(x.start, x.end), x.place].filter(Boolean).join(" · ")) + '</p>' +
         (x.about ? '<p style="margin:0;max-width:62ch;white-space:pre-line">' + esc(x.about) + '</p>' : "") +
-        (x.open ? '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="hint"><b style="color:var(--fg)">' + x.free + '</b> / ' + x.total + ' лангуу сул байна</p><div><a class="btn pri" href="' + encodeURIComponent(x.key) + '">Лангуу захиалах →</a></div>'
+        (x.open ? '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="hint"><b style="color:var(--fg)">' + x.free + '</b> / ' + x.total + ' талбай сул байна</p><div><a class="btn pri" href="' + encodeURIComponent(x.key) + '">Талбай захиалах →</a></div>'
           : '<p class="hint">Захиалга нээгдэхэд энэ хуудсаар захиалах боломжтой болно.</p>') + "</div></article>";
     }).join("");
     showPosters(r.expos.map(x => x.poster).filter(Boolean));
@@ -111,9 +111,9 @@ async function load(first) {
     const r = await api("expo", { e: EID });
     const prev = D; D = r;
     if (first) {
-      document.title = r.expo.name + " — лангуу захиалах";
+      document.title = r.expo.name + " — үзэсгэлэнгийн талбай захиалах";
       $("#title").textContent = r.expo.name;
-      $("#dates").textContent = [range(r.expo.start, r.expo.end), r.expo.place].filter(Boolean).join(" · ") || "Лангуу захиалга";
+      $("#dates").textContent = [range(r.expo.start, r.expo.end), r.expo.place].filter(Boolean).join(" · ") || "Талбайн захиалга";
       if (r.expo.about) { $("#about").textContent = r.expo.about; $("#about").hidden = false; }
       $("#hHold").textContent = r.expo.holdHours + " цаг барьцаалагдана";
       $("#hAdv").textContent = r.expo.advancePct + "% урьдчилгаа төлнө";
@@ -152,7 +152,7 @@ function info() {
   let h = '<div class="row spread"><div class="row" style="gap:8px"><span class="code">' + esc(b.code) + "</span>" + pillHtml(mine ? "held" : b.status, true) + '</div><strong style="font-size:20px;font-variant-numeric:tabular-nums">' + fmt(mine ? mine.price : b.price) + " ₮</strong></div>" +
     '<p class="hint" style="margin-top:-6px">' + b.m2 + ' м²' + (c.name ? ' · <span class="sw" style="background:' + esc(c.color) + '"></span> ' + esc(c.name) : "") + "</p>";
   if (mine) {
-    h += '<div class="ok"><strong>Захиалга бүртгэгдлээ, баярлалаа!</strong><p class="hint" style="margin-top:4px">' + esc(b.code) + " лангуу " + mine.holdHours + " цагийн турш танд барьцаалагдлаа. Энэ хугацаанд урьдчилгаагаа төлнө үү. Менежер удахгүй тантай холбогдоно.</p></div>" +
+    h += '<div class="ok"><strong>Захиалга бүртгэгдлээ, баярлалаа!</strong><p class="hint" style="margin-top:4px">' + esc(b.code) + " талбай " + mine.holdHours + " цагийн турш танд барьцаалагдлаа. Энэ хугацаанд урьдчилгаагаа төлнө үү. Менежер удахгүй тантай холбогдоно.</p></div>" +
       '<div class="kv"><span>Байгууллага</span><b>' + esc(mine.org) + "</b><span>Нийт дүн</span><b>" + fmt(mine.price) + " ₮</b><span>Урьдчилгаа</span><b>" + fmt(mine.advance) + " ₮</b><span>Гүйлгээний утга</span><b>" + esc(b.code + " " + mine.org) + "</b>" + (D.expo.payInfo ? "<span>Данс</span><b>" + esc(D.expo.payInfo) + "</b>" : "") + "</div>";
     h += '<p class="hint">🎁 Үзэсгэлэнгийн өдрүүдэд хямдрал зарлах бол <a href="promo.html?e=' + encodeURIComponent(EID) + '">энд бүртгүүлээрэй</a> — бид сошиал сувгуудаараа сурталчилна.</p>';
   } else if (b.status === "free") {
@@ -163,7 +163,7 @@ function info() {
       '<label class="f">Имэйл (заавал биш)<input id="fMail" type="email" autocomplete="email" placeholder="info@company.mn"><span class="err" id="eMail"></span></label>' +
       (D.products && D.products.length ? '<div class="f" style="grid-column:1/-1"><span>Юу худалдах вэ? * <span class="hint">(' + (D.maxProducts || 3) + ' хүртэл сонгоно)</span></span><div id="fProd"></div><span class="err" id="eProd"></span></div>' : "") +
       '<div class="row" style="grid-column:1/-1"><button class="btn pri" type="submit" id="fBtn">Захиалах</button><span class="hint">Урьдчилгаа ' + fmt(adv) + " ₮ · " + D.expo.holdHours + " цагийн дотор</span></div><span class=\"err\" id=\"eAll\" style=\"grid-column:1/-1\"></span></form>";
-  } else h += '<p class="hint">Энэ лангуу ' + (b.status === "held" ? "түр барьцаалагдсан" : "захиалагдсан") + " байна. Ногоон хүрээтэй сул лангуунаас сонгоно уу.</p>";
+  } else h += '<p class="hint">Энэ талбай ' + (b.status === "held" ? "түр барьцаалагдсан" : "захиалагдсан") + " байна. Ногоон хүрээтэй сул талбайгаас сонгоно уу.</p>";
   el.innerHTML = h; el.hidden = false;
   const f = $("#bf"); if (!f) return;
   const pp = $("#fProd") ? productPicker($("#fProd"), D.products, D.maxProducts, () => { $("#eProd").textContent = ""; $("#eAll").textContent = ""; }) : null;

@@ -82,7 +82,7 @@
       <div class="filters">
         <label class="f">Үзэсгэлэн<select id="fExpo"></select></label>
         <label class="f" id="fCatWrap" hidden>Салбар<select id="fCat"></select></label>
-        <label class="f">Хайх<input id="fQ" type="text" placeholder="Байгууллага, утас, лангуу" autocomplete="off"></label>
+        <label class="f">Хайх<input id="fQ" type="text" placeholder="Байгууллага, утас, талбай" autocomplete="off"></label>
       </div>
       <div class="chips" id="fSt" role="group" aria-label="Төлөв"></div>
     </div>
@@ -96,7 +96,7 @@
     </div>
 
     <div class="card">
-      <div class="row spread"><h2 id="tTitle">Захиалгууд</h2><div class="row"><span class="hint">Мөр дээр дарахад талбайн зураг дээр нээгдэнэ</span><button class="btn sm" id="xlsx" type="button">📥 Excel татах</button></div></div>
+      <div class="row spread"><h2 id="tTitle">Захиалгууд</h2><div class="row"><span class="hint">Мөр дээр дарахад байршлын зураг дээр нээгдэнэ</span><button class="btn sm" id="xlsx" type="button">📥 Excel татах</button></div></div>
       <div class="tbl-wrap"><table id="tbl"></table></div>
     </div>
   </section>
@@ -194,12 +194,12 @@ function tiles(list) {
   const soon = list.filter(b => b.st === "held" && b.dl && b.dl - now < 24 * 3600e3).length;
   const T = (k, v, sub, color) => '<div class="tile"><span class="k">' + k + '</span><span class="v"' + (color ? ' style="color:' + color + '"' : "") + '>' + v + '</span>' + (sub ? '<span class="s">' + sub + '</span>' : "") + '</div>';
   $("#tiles").innerHTML =
-    T("Зарагдсан лангуу", done + " / " + s.cnt, (s.cnt ? Math.round(done / s.cnt * 100) : 0) + "% · урьдчилгаа эсвэл бүрэн төлсөн") +
+    T("Зарагдсан талбай", done + " / " + s.cnt, (s.cnt ? Math.round(done / s.cnt * 100) : 0) + "% · урьдчилгаа эсвэл бүрэн төлсөн") +
     T("Түр барьсан", s.n.held, soon ? "⏳ " + soon + " нь 24 цагт суллагдана" : "Төлбөр хүлээгдэж байна", soon ? "var(--held)" : "") +
     T("Орсон мөнгө", fmt(s.got) + "₮", "Боломжит орлогын " + (s.total ? Math.round(s.got / s.total * 100) : 0) + "%", "var(--free)") +
     T("Авлага", fmt(s.owe) + "₮", "Захиалсан ч төлөгдөөгүй дүн", s.owe ? "var(--paid)" : "") +
-    T("Боломжит орлого", fmt(s.total) + "₮", "Бүх лангуу зарагдвал") +
-    T("Сул лангуу", s.n.free, fmt(list.filter(b => b.st === "free").reduce((a, b) => a + b.price, 0)) + "₮-ийн үнэтэй");
+    T("Боломжит орлого", fmt(s.total) + "₮", "Бүх талбай зарагдвал") +
+    T("Сул талбай", s.n.free, fmt(list.filter(b => b.st === "free").reduce((a, b) => a + b.price, 0)) + "₮-ийн үнэтэй");
 }
 function stack(n, tot) {
   return '<div class="stack" role="img" aria-label="Бүрэн ' + n.paid + ', урьдчилгаа ' + n.adv + ', түр ' + n.held + ', сул ' + n.free + '">' +
@@ -221,10 +221,10 @@ function breakdown(list, ex) {
       (g.sub ? '<div class="hint">' + esc(g.sub) + '</div>' : "") + '</div>' + stack(s.n) +
       '<div class="m"><b>' + fmt(s.got) + '₮</b> / ' + fmt(s.total) + '₮</div>' +
       '<div class="c">🟥 ' + s.n.paid + ' · 🟧 ' + s.n.adv + ' · 🟨 ' + s.n.held + ' · ⬜ ' + s.n.free + ' · зарагдсан ' + (s.cnt ? Math.round((s.n.adv + s.n.paid) / s.cnt * 100) : 0) + '%</div></div>';
-  }).join("") : '<p class="hint">Энэ шүүлтүүрт тохирох лангуу алга.</p>';
+  }).join("") : '<p class="hint">Энэ шүүлтүүрт тохирох талбай алга.</p>';
 }
 
-const COLS = [["code", "Лангуу"], ["expo", "Үзэсгэлэн"], ["org", "Байгууллага"], ["tel", "Утас"], ["st", "Төлөв"], ["price", "Дүн", 1], ["got", "Төлсөн", 1], ["owe", "Үлдэгдэл", 1], ["dl", "Хугацаа"]];
+const COLS = [["code", "Талбай"], ["expo", "Үзэсгэлэн"], ["org", "Байгууллага"], ["tel", "Утас"], ["st", "Төлөв"], ["price", "Дүн", 1], ["got", "Төлсөн", 1], ["owe", "Үлдэгдэл", 1], ["dl", "Хугацаа"]];
 const STO = { held: 0, adv: 1, paid: 2, free: 3 };
 function table(list, multi) {
   const names = {}; D.expos.forEach(e => { names[e.id] = e.name; });
@@ -242,7 +242,7 @@ function table(list, multi) {
         price: fmt(b.price) + "₮", got: b.got ? fmt(b.got) + "₮" : "—", owe: owe ? '<span class="owe">' + fmt(owe) + "₮</span>" : "—",
         dl: b.st === "held" ? (b.dl && b.dl - now < 24 * 3600e3 ? "⏳ " : "") + left(b.dl) + " үлдсэн" : b.at ? '<span class="hint">' + esc(fmtD(b.at)) + (b.by ? " · " + esc(b.by) : "") + '</span>' : "" };
       return '<tr data-e="' + esc(b.e) + '" data-b="' + esc(b.id) + '">' + cols.map(c => '<td data-l="' + c[1] + '" class="c-' + c[0] + (c[2] ? ' num' : "") + '">' + cell[c[0]] + '</td>').join("") + '</tr>';
-    }).join("") : '<tr><td class="hint" colspan="' + cols.length + '">Энэ шүүлтүүрт тохирох лангуу алга.</td></tr>') + '</tbody>';
+    }).join("") : '<tr><td class="hint" colspan="' + cols.length + '">Энэ шүүлтүүрт тохирох талбай алга.</td></tr>') + '</tbody>';
 }
 $("#tbl").onclick = e => {
   const s = e.target.closest("[data-sort]");
@@ -263,7 +263,7 @@ $("#xlsx").onclick = async () => {
     await loadXlsx();
     const names = {}, cats = {}; D.expos.forEach(e => { names[e.id] = e.name; }); D.cats.forEach(c => { cats[c.e + "|" + c.id] = c.name; });
     const dt = t => { if (!t) return ""; const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + hhmm(t); };
-    const head = ["Үзэсгэлэн", "Лангуу", "Салбар", "м²", "Байгууллага", "Хариуцагч", "Утас", "Имэйл", "Төлөв", "Дүн ₮", "Төлсөн ₮", "Үлдэгдэл ₮", "Барьцаа дуусах", "Сүүлд өөрчилсөн", "Хэн"];
+    const head = ["Үзэсгэлэн", "Талбай", "Салбар", "м²", "Байгууллага", "Хариуцагч", "Утас", "Имэйл", "Төлөв", "Дүн ₮", "Төлсөн ₮", "Үлдэгдэл ₮", "Барьцаа дуусах", "Сүүлд өөрчилсөн", "Хэн"];
     const rows = LAST.rows.map(b => [names[b.e], b.code, cats[b.e + "|" + b.cat] || "", b.m2 || "", b.org || "", b.person || "", b.tel || "", b.mail || "", ST[b.st], b.price, b.got, b.st === "free" ? 0 : b.price - b.got, b.st === "held" ? dt(b.dl) : "", dt(b.at), b.by || ""]);
     const filt = "Шүүлтүүр: " + $("#fExpo").selectedOptions[0].text + " · " + (CHIPS.find(c => c[0] === F.st) || [, ""])[1] + (F.cat ? " · " + $("#fCat").selectedOptions[0].text : "") + (F.q ? " · \"" + F.q + "\"" : "");
     const ws1 = XLSX.utils.aoa_to_sheet([head].concat(rows));
@@ -274,7 +274,7 @@ $("#xlsx").onclick = async () => {
     const one = LAST.ex.length === 1, groups = one ? D.cats.filter(c => c.e === LAST.ex[0].id).map(c => [c.name, LAST.base.filter(b => b.cat === c.id)]) : LAST.ex.map(e => [e.name, LAST.base.filter(b => b.e === e.id)]);
     const line = (n, l) => { const s = sums(l); return [n, s.cnt, s.n.paid, s.n.adv, s.n.held, s.n.free, s.cnt ? Math.round((s.n.adv + s.n.paid) / s.cnt * 100) / 100 : 0, s.got, s.owe, s.total]; };
     const sum = [["Захиалгын тайлан — " + (window.EXPO_ORG || "")], [filt], ["Татсан: " + dt(Date.now())], [],
-      [one ? "Салбар" : "Үзэсгэлэн", "Нийт лангуу", "Бүрэн төлсөн", "Урьдчилгаа", "Түр барьсан", "Сул", "Зарагдсан %", "Орсон мөнгө ₮", "Авлага ₮", "Боломжит орлого ₮"]]
+      [one ? "Салбар" : "Үзэсгэлэн", "Нийт талбай", "Бүрэн төлсөн", "Урьдчилгаа", "Түр барьсан", "Сул", "Зарагдсан %", "Орсон мөнгө ₮", "Авлага ₮", "Боломжит орлого ₮"]]
       .concat(groups.filter(g => g[1].length).map(g => line(g[0], g[1])), [line("НИЙТ", LAST.base)]);
     const ws2 = XLSX.utils.aoa_to_sheet(sum);
     ws2["!cols"] = [26, 12, 12, 12, 12, 8, 12, 16, 16, 18].map(w => ({ wch: w }));

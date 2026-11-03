@@ -27,7 +27,7 @@ async function api(a, data, opts) {
   return j;
 }
 
-/** Талбайн зургийг авчирна. Нэг удаа татсан зургийг төхөөрөмж дээр хадгалж дахин ашиглана. */
+/** Байршлын зургийг авчирна. Нэг удаа татсан зургийг төхөөрөмж дээр хадгалж дахин ашиглана. */
 async function loadImage(id) {
   const k = "expo-img-" + id;
   try { const c = localStorage.getItem(k); if (c) return c; } catch (e) {}
@@ -83,7 +83,7 @@ function pillHtml(st, pub) {
   return '<span class="pill" style="color:var(--' + m[0] + ');border-color:var(--' + m[0] + ')">' + m[1] + "</span>";
 }
 
-/** Утсан дээр лангуутай хэсгийг дэлгэцэнд багтаж харагдахаар томруулж, тэр хэсэг рүү гүйлгэнэ. */
+/** Утсан дээр талбайтай хэсгийг дэлгэцэнд багтаж харагдахаар томруулж, тэр хэсэг рүү гүйлгэнэ. */
 function fitBooths(booths, frame, small) {
   if (!booths.length) return { zoom: 100, scroll() {} };
   const y0 = Math.min(...booths.map(b => b.y)), x0 = Math.min(...booths.map(b => b.x)), x1 = Math.max(...booths.map(b => b.x + b.w));

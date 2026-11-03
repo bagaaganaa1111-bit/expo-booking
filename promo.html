@@ -54,7 +54,7 @@ $("#f1").onsubmit = async e => {
     const r = await api("promoFind", { e: E, tel });
     TEL = tel;
     $("#who").textContent = r.org + " · " + r.expo;
-    $("#booths").textContent = "Лангуу: " + r.booths.join(", ");
+    $("#booths").textContent = "Талбай: " + r.booths.join(", ");
     $("#promo").value = r.promo || ""; $("#cnt").textContent = $("#promo").value.length;
     $("#f1").hidden = true; $("#f2").hidden = false; $("#promo").focus();
   } catch (err) { $("#e1").textContent = err.message; }

@@ -1669,7 +1669,11 @@ function tgCallback_(q) {
   if (!who) return ans('Энэ чатаас үйлдэл хийх эрхгүй.', true);
   if (String(q.data || '').indexOf('P|') === 0) {
     try { return postBtn_(who, q, String(q.data).split('|')); }
-    catch (err) { if (!(err && err.userMessage)) reportError_('пост товч', err); return ans('⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Дахин дарна уу.'), true); }
+    catch (err) {
+      if (!(err && err.userMessage)) reportError_('пост товч', err);
+      const m = '⚠️ ' + (err && err.userMessage || 'Алдаа гарлаа. Дахин дарна уу.');
+      ans(m, true); return tgSend_(msg.chat && msg.chat.id, m); // товчны хариу аль хэдийн өгөгдсөн байж болно
+    }
   }
   if (String(q.data || '').indexOf('L|') === 0) {
     try { return tgLeadBtn_(who, q, String(q.data).split('|')); }
@@ -1874,7 +1878,9 @@ function postCardText_(p) {
   let t = head + (p.by ? ' · ' + p.by : '') + '\n' + (ph.length ? '🖼 ' + ph.length + ' зураг\n' : '') + '──────────\n' +
     (String(p.text || '').trim() || '(Текст алга. Текстээ бичээд илгээнэ үү.)') + '\n──────────\n';
   if (p.status === 'draft') {
-    t += ph.length || p.text ? 'Хаана нийтлэхээ сонгоод "Одоо нийтлэх" эсвэл "Цаг товлох" дарна уу.\nЗураг нэмэх, текст солих бол дахин илгээнэ.' : 'Зураг (10 хүртэл) болон текстээ энд илгээнэ үү.';
+    const sel = tg.map(c => POST_CH[c]);
+    t += (sel.length ? '📍 Нийтлэх: ' + sel.join(', ') : '⚠️ Суваг сонгоогүй байна. Доорх ⬜ товчийг дарж ✅ болгоно уу.') + '\n' +
+      (ph.length || p.text ? (sel.length ? 'Бэлэн бол "Одоо нийтлэх" эсвэл "Цаг товлох" дарна уу.\n' : '') + 'Зураг нэмэх, текст солих бол дахин илгээнэ.' : 'Зураг (10 хүртэл) болон текстээ энд илгээнэ үү.');
   } else if (p.status === 'scheduled') t += '⏰ ' + fmtAt_(at) + '-д нийтлэгдэнэ · ' + tg.map(c => POST_CH[c]).join(', ');
   else if (p.status !== 'cancelled') t += tg.map(c => (res[c] && res[c].ok ? '✅ ' : res[c] ? '❌ ' : '⏳ ') + POST_CH[c] + (res[c] && !res[c].ok ? ': ' + res[c].err : '')).join('\n') + (p.publishedAt ? '\n🕐 ' + fmtAt_(p.publishedAt instanceof Date ? p.publishedAt : Date.parse(p.publishedAt)) : '');
   return t.slice(0, 4000);
@@ -1885,7 +1891,7 @@ function postCardKb_(p) {
     const ready = postPhotos_(p).length || String(p.text || '').trim(), tg = postTargets_(p);
     const rows = [[k('📋 Бэлэн загвараас', 'tpl')], postChannels_().map(c => ({ text: (tg.indexOf(c) >= 0 ? '✅ ' : '⬜ ') + POST_CH[c], callback_data: 'P|t|' + p.id + '|' + c }))];
     if (String(p.text || '').trim()) rows.push([k('✨ Текстийг сайжруулах', 'ai')].concat(p.orig ? [k('↩️ Анхны текст', 'undo')] : []));
-    if (ready) rows.push([k('📢 Одоо нийтлэх', 'now'), k('⏰ Цаг товлох', 'sch')]);
+    if (ready && tg.length) rows.push([k('📢 Одоо нийтлэх', 'now'), k('⏰ Цаг товлох', 'sch')]);
     rows.push([k('❌ Болих', 'x')]);
     return rows;
   }
@@ -2017,6 +2023,8 @@ function postBtn_(who, q, a) {
   }
   if (act === 's') return postSchedule_(who, id, Number(a[3]) * 6e4, chat, ans);
   if (act === 'now') {
+    const chk = postGet_(id);
+    if ((chk.status === 'draft' || chk.status === 'scheduled') && !postTargets_(chk).length) { ans('Ядаж нэг суваг сонгоно уу (⬜ → ✅).', true); return postShow_(chk, chat); }
     ans('📢 Нийтэлж байна…');
     c.remove('postmode_' + chat);
     const p = withLock_(() => { const p = postGet_(id); if (p.status !== 'draft' && p.status !== 'scheduled') return null; if (!postTargets_(p).length) fail_('Ядаж нэг суваг сонгоно уу.'); p.status = 'sending'; writeRow_(SH.POST, p); return p; });

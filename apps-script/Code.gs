@@ -1065,15 +1065,42 @@ const ST_NAME = { free: 'Сул', held: 'Түр барьсан', adv: 'Урьд�
 const ST_ICON = { free: '⬜', held: '🟨', adv: '🟧', paid: '🟥' };
 const TG_MENU = [['📊 Өнөөдрийн байдал', 'status'], ['💰 Авлага', 'due'], ['⏰ Хугацаа дуусах', 'soon'], ['🔎 Хайх', 'find'], ['🗂 Оролцогчид', 'orgs']];
 
-function tg_(method, payload) {
+function tg_(method, payload, retried) {
   const token = prop_('TELEGRAM_TOKEN');
   if (!token) return {};
   try {
     const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(payload || {})
     });
-    return JSON.parse(r.getContentText() || '{}');
+    const j = JSON.parse(r.getContentText() || '{}');
+    // Групп supergroup болж шинэчлэгдвэл chat ID өөрчлөгддөг — тохиргоог автоматаар засаад дахин илгээнэ.
+    const mig = j && !j.ok && j.parameters && j.parameters.migrate_to_chat_id;
+    if (mig && payload && payload.chat_id && !retried) {
+      tgMigrate_(payload.chat_id, mig);
+      return tg_(method, Object.assign({}, payload, { chat_id: mig }), true);
+    }
+    if (j && !j.ok && payload && payload.chat_id) tgFail_(method, payload.chat_id, j);
+    return j;
   } catch (e) { return {}; }
+}
+function tgMigrate_(from, to) {
+  ['TELEGRAM_CHAT', 'TELEGRAM_DIRECTOR', 'TELEGRAM_ADMIN', 'TELEGRAM_USERS'].forEach(k => {
+    const v = String(prop_(k) || ''); if (!v) return;
+    const nv = v.split(',').map(x => x.trim() === String(from) ? String(to) : x.trim()).join(',');
+    if (nv !== v) setProp_(k, nv);
+  });
+}
+/** Илгээж чадаагүй бол шалтгааныг хадгалж, систем админд (өөр чат руу) нэг удаа мэдэгдэнэ. */
+function tgFail_(method, chat, j) {
+  try {
+    if (method !== 'sendMessage' && method !== 'sendPhoto' && method !== 'sendMediaGroup') return;
+    const why = String(j.description || j.error_code || 'тодорхойгүй');
+    setProp_('TG_LAST_FAIL', new Date().toISOString() + ' ' + chat + ' ' + why);
+    const c = CacheService.getScriptCache(), k = 'tgfail_' + chat;
+    if (c.get(k)) return; c.put(k, '1', 1800);
+    const a = ids_('TELEGRAM_ADMIN').filter(x => String(x) !== String(chat))[0];
+    if (a) tg_('sendMessage', { chat_id: a, text: '⚠️ Telegram мэдэгдэл хүрсэнгүй\nЧат: ' + chat + '\nШалтгаан: ' + why + '\n\nБот тухайн группээс хасагдсан эсвэл групп шинэчлэгдсэн байж магадгүй.' });
+  } catch (e) {}
 }
 function tgSend_(chat, text, markup, extra) {
   return tg_('sendMessage', Object.assign({ chat_id: chat, text: String(text).slice(0, 4000), disable_web_page_preview: true }, markup ? { reply_markup: markup } : {}, extra || {}));

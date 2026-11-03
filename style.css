@@ -3,9 +3,9 @@
   --bg:#F2F3F6;--panel:#FFFFFF;--fg:#1B1E2B;--muted:#5D6375;--line:#D9DCE5;
   --accent:#3346A0;--accent-soft:#E2E6F6;--on-accent:#FFFFFF;
   --free:#1F8A4C;--held:#C98A12;--adv:#C2561C;--paid:#B3261E;
-  --display:"Unbounded","IBM Plex Sans",system-ui,sans-serif;
-  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --display:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -23,7 +23,7 @@ img{max-width:100%}
 [hidden]{display:none!important}
 .wrap{max-width:1040px;margin:0 auto;padding-block:20px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
 .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0}
-h1{font-family:var(--display);font-weight:600;font-size:clamp(21px,4.2vw,30px);margin:4px 0 0;letter-spacing:-0.01em;text-wrap:balance}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(21px,4.2vw,30px);margin:4px 0 0;letter-spacing:-0.01em;text-wrap:balance}
 h2{font-size:17px;font-weight:600;margin:0}
 .lead{margin:6px 0 0;color:var(--muted);max-width:62ch}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}

@@ -64,7 +64,7 @@ function doPost(e) {
 
 const PUBLIC = { list: apiList_, expo: apiExpo_, image: apiImage_, book: apiBook_, relayPair: apiRelayPair_, promoFind: apiPromoFind_, promoSave: apiPromoSave_ };
 const STAFF = {
-  login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_,
+  login: apiLogin_, expos: apiExpos_, createExpo: apiCreateExpo_, updateExpo: apiUpdateExpo_, deleteExpo: apiDeleteExpo_,
   staffExpo: apiStaffExpo_, uploadImage: apiUploadImage_, detect: apiDetect_,
   saveBooths: apiSaveBooths_, setStatus: apiSetStatus_, staffList: apiStaffList_, staffSave: apiStaffSave_, poster: apiPoster_, report: apiReport_
 };
@@ -504,6 +504,25 @@ function apiUpdateExpo_(req, who) {
     bump_(e);
     return { expo: { id: e.id, status: e.status } };
   });
+}
+
+/** Үзэсгэлэнг бүрмөсөн устгана (захирал). Төлбөр орсон захиалгатай бол устгахгүй. "Оролцоо" түүх хэвээр үлдэнэ. */
+function apiDeleteExpo_(req, who) {
+  needBoss_(who);
+  const e = withLock_(() => {
+    const e = findExpo_(req.id), bs = boothsOf_(e.id);
+    const paid = bs.filter(b => b.status === 'adv' || b.status === 'paid');
+    if (paid.length) fail_('Төлбөр орсон ' + paid.length + ' захиалга байна (' + paid.slice(0, 5).map(b => b.code).join(', ') + (paid.length > 5 ? '…' : '') + '). Устгахын өмнө эдгээрийг цуцална уу.');
+    replaceExpoRows_(SH.BOOTH, e.id, []);
+    replaceExpoRows_(SH.CAT, e.id, []);
+    sheet_(SH.EXPO).deleteRow(e._row);
+    return e;
+  });
+  [e.imageId, e.posterId].filter(Boolean).forEach(id => { try { DriveApp.getFileById(String(id)).setTrashed(true); } catch (x) {} });
+  log_(e.id, '', 'үзэсгэлэн устгасан', who.name, String(e.name));
+  bump_(e);
+  notify_('tech', '🗑 Үзэсгэлэн устгагдлаа: ' + e.name + ' (' + who.name + ')');
+  return { deleted: String(e.id) };
 }
 
 function apiStaffExpo_(req) {

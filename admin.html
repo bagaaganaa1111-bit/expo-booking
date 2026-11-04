@@ -144,6 +144,10 @@
           <div class="row"><label class="btn sm" for="posterFile" id="posterPick">Постер оруулах</label><input id="posterFile" type="file" accept="image/*" hidden><button class="btn sm warn" type="button" id="posterDel" hidden>Устгах</button></div>
         </div>
       </div>
+      <div class="row" id="delBox" hidden style="margin-top:16px;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:14px">
+        <button class="btn sm warn" type="button" id="delExpo">🗑 Үзэсгэлэн устгах</button>
+        <span class="hint" id="delHint">Талбай, захиалга, зургууд бүгд устна. Буцаах боломжгүй.</span>
+      </div>
     </details>
   </section>
 
@@ -250,6 +254,15 @@ function render() {
   const ob = $("#openBtn"); if (ob) ob.onclick = () => setExpoStatus("open");
   const cb = $("#closeBtn"); if (cb) cb.onclick = () => { if (cb.dataset.arm) setExpoStatus("closed"); else { cb.dataset.arm = 1; cb.textContent = "Дахин дарж хаахыг батална"; } };
   const cl = $("#copyLink"); if (cl) cl.onclick = copyLink;
+  $("#delBox").hidden = !BOSS();
+  const db = $("#delExpo"); delete db.dataset.arm; db.textContent = "🗑 Үзэсгэлэн устгах";
+  db.onclick = async () => {
+    if (!db.dataset.arm) { db.dataset.arm = 1; db.textContent = "Дахин дарж «" + EXPO.name + "»-г устгахыг батална"; setTimeout(() => { if (db.dataset.arm) { delete db.dataset.arm; db.textContent = "🗑 Үзэсгэлэн устгах"; } }, 6000); return; }
+    delete db.dataset.arm; db.disabled = true; db.textContent = "Устгаж байна…";
+    try { await call("deleteExpo", { id: EXPO.id }); toast("Үзэсгэлэн устгагдлаа."); setDirty(false); location.hash = ""; }
+    catch (e) { toast(e.message, 7000); db.textContent = "🗑 Үзэсгэлэн устгах"; }
+    db.disabled = false;
+  };
   const cp = $("#copyPromo"); if (cp) cp.onclick = async () => { const u = pubLink().replace(/([^/]+)$/, "promo.html?e=$1"); try { await navigator.clipboard.writeText(u); toast("Хуулагдлаа. Оролцогчдод илгээвэл тэд үзэсгэлэнгийн хямдралаа бүртгүүлнэ.", 5000); } catch (e) { toast(u, 8000); } };
   const note = $("#eNote");
   if (EXPO.status !== "open" && hasB && !BOSS()) { note.hidden = false; note.textContent = "Талбайнуудыг шалгаж \"Хадгалах\" дарна уу. Үнэ тогтоож, захиалга нээх ажлыг захирал хийнэ."; }

@@ -1109,7 +1109,7 @@ function tgSend_(chat, text, markup, extra) {
 function tgEdit_(msg, text, kb) {
   tg_('editMessageText', { chat_id: msg.chat.id, message_id: msg.message_id, text: String(text).slice(0, 4000), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb || [] } });
 }
-const PAGES_URL = 'https://zahialga.sayamunkh.mn/';
+const PAGES_URL = 'https://burtgel.sayamunkh.mn/';
 function tgMenuKb_(who) {
   const web = prop_('PAGES_URL') || PAGES_URL;
   const b = m => ({ text: m[0], callback_data: 'm|' + m[1] }), sheet = sheetUrl_(SH.ORG);

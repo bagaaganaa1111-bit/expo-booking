@@ -117,8 +117,7 @@ td.mono{font-family:var(--mono)}
 .expo-card .poster img{width:100%;height:100%;object-fit:cover;display:block}
 @media (max-width:640px){
   .expo-card{flex-direction:column;gap:14px}
-  .expo-card .poster{order:0;flex:none;width:100%;aspect-ratio:auto;min-height:180px;max-height:70vh}
-  .expo-card .poster img{height:auto;max-height:70vh;object-fit:contain}
+  .expo-card .poster{order:0;flex:none;width:100%;aspect-ratio:3/4}
 }
 .lightbox{position:fixed;inset:0;z-index:50;background:rgba(10,12,18,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;cursor:zoom-out}
 .lightbox img{max-width:100%;max-height:calc(100vh - 90px);object-fit:contain;border-radius:8px}

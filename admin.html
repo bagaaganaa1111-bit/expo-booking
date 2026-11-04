@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Үзэсгэлэнгийн талбайн удирдлага</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <div class="wrap">
@@ -190,6 +190,21 @@ $("#loginForm").onsubmit = async e => {
 function logout() { PIN = ""; USER = null; store("expo-pin", null); clearInterval(pollT); location.hash = ""; show("vLogin"); }
 $("#logout").onclick = logout;
 
+/* Үзэсгэлэн устгах: 1-р дарахад асууна, 2-р дарахад устгана; төлбөртэй захиалгатай бол 3 дахь удаа батлуулна. */
+async function delFlow(btn, id, name, done) {
+  const reset = () => { delete btn.dataset.arm; btn.textContent = btn.dataset.label || "🗑 Устгах"; btn.classList.remove("armed"); };
+  btn.dataset.label = btn.dataset.label || btn.textContent;
+  clearTimeout(btn._t); btn._t = setTimeout(reset, 7000);
+  if (!btn.dataset.arm) { btn.dataset.arm = "1"; btn.classList.add("armed"); btn.textContent = "«" + name + "» устгах уу? Дахин дарна уу"; return; }
+  const force = btn.dataset.arm === "2"; btn.textContent = "Устгаж байна…";
+  try { await call("deleteExpo", { id, force }); clearTimeout(btn._t); toast("«" + name + "» устгагдлаа."); done(); }
+  catch (e) {
+    const m = /^PAID:(\d+)/.exec(e.message);
+    if (m) { btn.dataset.arm = "2"; btn.textContent = "⚠️ Төлбөр орсон " + m[1] + " захиалга бас устна. Дахин дарж батална"; return; }
+    toast(e.message, 7000); reset();
+  }
+}
+
 /* ---------- Жагсаалт ---------- */
 async function openList() {
   show("vList"); $("#hello").textContent = USER ? USER.name + " · " + (ROLE_NAME[USER.role] || "") : ""; $("#staffBtn").hidden = !BOSS(); $("#reportBtn").hidden = !BOSS(); $("#newForm").hidden = false;
@@ -200,12 +215,18 @@ async function openList() {
     const st = { draft: ["muted", "Бэлтгэл"], open: ["free", "Захиалга нээлттэй"], closed: ["paid", "Хаагдсан"] };
     $("#expoList").innerHTML = r.expos.length ? r.expos.map(x => {
       const s = st[x.status] || st.draft, pct = x.booths ? Math.round(x.booked / x.booths * 100) : 0;
-      return '<button class="expo-item" data-id="' + esc(x.id) + '"><span class="pill" style="align-self:flex-start;color:var(--' + s[0] + ');border-color:var(--' + s[0] + ')">' + s[1] + '</span><b>' + esc(x.name) + '</b><span class="hint">' + esc([x.start, x.end].filter(Boolean).join(" – ") || "Огноо оруулаагүй") + '</span>' +
-        (x.booths ? '<span class="hint">' + x.booked + ' / ' + x.booths + ' талбай захиалагдсан · ' + pct + '%</span><span class="bar"><i style="width:' + pct + '%"></i></span>' : '<span class="hint">' + (x.hasImage ? "Талбай тэмдэглээгүй" : "Байршлын зураг оруулаагүй") + '</span>') + '</button>';
+      return '<div class="expo-item" role="button" tabindex="0" data-id="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + (BOSS() ? '<button class="xdel" type="button" aria-label="Устгах">🗑 Устгах</button>' : '') + '<span class="pill" style="align-self:flex-start;color:var(--' + s[0] + ');border-color:var(--' + s[0] + ')">' + s[1] + '</span><b>' + esc(x.name) + '</b><span class="hint">' + esc([x.start, x.end].filter(Boolean).join(" – ") || "Огноо оруулаагүй") + '</span>' +
+        (x.booths ? '<span class="hint">' + x.booked + ' / ' + x.booths + ' талбай захиалагдсан · ' + pct + '%</span><span class="bar"><i style="width:' + pct + '%"></i></span>' : '<span class="hint">' + (x.hasImage ? "Талбай тэмдэглээгүй" : "Байршлын зураг оруулаагүй") + '</span>') + '</div>';
     }).join("") : '<p class="hint">Одоогоор үзэсгэлэн алга. Дээрх хэсгээс эхнийхээ үзэсгэлэнг үүсгэнэ үү.</p>';
   } catch (e) { $("#expoList").innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }
 }
-$("#expoList").onclick = e => { const b = e.target.closest(".expo-item"); if (b) location.hash = "e=" + b.dataset.id; };
+$("#expoList").onclick = e => {
+  const b = e.target.closest(".expo-item"); if (!b) return;
+  const d = e.target.closest(".xdel");
+  if (d) { e.stopPropagation(); delFlow(d, b.dataset.id, b.dataset.name, () => b.remove()); return; }
+  location.hash = "e=" + b.dataset.id;
+};
+$("#expoList").onkeydown = e => { const b = e.target.closest(".expo-item"); if (b && e.target === b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); location.hash = "e=" + b.dataset.id; } };
 $("#newForm").onsubmit = async e => {
   e.preventDefault(); const name = $("#nName").value.trim(); $("#newErr").textContent = "";
   if (!name) { $("#newErr").textContent = "Үзэсгэлэнгийн нэрийг оруулна уу."; return; }
@@ -255,14 +276,7 @@ function render() {
   const cb = $("#closeBtn"); if (cb) cb.onclick = () => { if (cb.dataset.arm) setExpoStatus("closed"); else { cb.dataset.arm = 1; cb.textContent = "Дахин дарж хаахыг батална"; } };
   const cl = $("#copyLink"); if (cl) cl.onclick = copyLink;
   $("#delBox").hidden = !BOSS();
-  const db = $("#delExpo"); delete db.dataset.arm; db.textContent = "🗑 Үзэсгэлэн устгах";
-  db.onclick = async () => {
-    if (!db.dataset.arm) { db.dataset.arm = 1; db.textContent = "Дахин дарж «" + EXPO.name + "»-г устгахыг батална"; setTimeout(() => { if (db.dataset.arm) { delete db.dataset.arm; db.textContent = "🗑 Үзэсгэлэн устгах"; } }, 6000); return; }
-    delete db.dataset.arm; db.disabled = true; db.textContent = "Устгаж байна…";
-    try { await call("deleteExpo", { id: EXPO.id }); toast("Үзэсгэлэн устгагдлаа."); setDirty(false); location.hash = ""; }
-    catch (e) { toast(e.message, 7000); db.textContent = "🗑 Үзэсгэлэн устгах"; }
-    db.disabled = false;
-  };
+  const db = $("#delExpo"); db.onclick = () => delFlow(db, EXPO.id, EXPO.name, () => { setDirty(false); location.hash = ""; });
   const cp = $("#copyPromo"); if (cp) cp.onclick = async () => { const u = pubLink().replace(/([^/]+)$/, "promo.html?e=$1"); try { await navigator.clipboard.writeText(u); toast("Хуулагдлаа. Оролцогчдод илгээвэл тэд үзэсгэлэнгийн хямдралаа бүртгүүлнэ.", 5000); } catch (e) { toast(u, 8000); } };
   const note = $("#eNote");
   if (EXPO.status !== "open" && hasB && !BOSS()) { note.hidden = false; note.textContent = "Талбайнуудыг шалгаж \"Хадгалах\" дарна уу. Үнэ тогтоож, захиалга нээх ажлыг захирал хийнэ."; }

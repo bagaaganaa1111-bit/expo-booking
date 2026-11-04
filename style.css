@@ -101,6 +101,9 @@ td.mono{font-family:var(--mono)}
 .expo-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .expo-item{text-align:left;font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px}
 .expo-item:hover{border-color:var(--accent)}
+.expo-item{position:relative}
+.expo-item .xdel{position:absolute;top:12px;right:12px;font:inherit;font-size:13px;color:var(--paid);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;max-width:calc(100% - 24px);text-align:right}
+.expo-item .xdel:hover,.expo-item .xdel.armed{border-color:var(--paid);background:color-mix(in srgb,var(--paid) 10%,var(--panel))}
 .expo-item b{font-size:16px}
 .bar{height:6px;border-radius:99px;background:var(--bg);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}

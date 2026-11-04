@@ -506,13 +506,13 @@ function apiUpdateExpo_(req, who) {
   });
 }
 
-/** Үзэсгэлэнг бүрмөсөн устгана (захирал). Төлбөр орсон захиалгатай бол устгахгүй. "Оролцоо" түүх хэвээр үлдэнэ. */
+/** Үзэсгэлэнг бүрмөсөн устгана (захирал). Төлбөр орсон захиалгатай бол force-оор дахин батлуулна. "Оролцоо" түүх хэвээр үлдэнэ. */
 function apiDeleteExpo_(req, who) {
   needBoss_(who);
   const e = withLock_(() => {
     const e = findExpo_(req.id), bs = boothsOf_(e.id);
     const paid = bs.filter(b => b.status === 'adv' || b.status === 'paid');
-    if (paid.length) fail_('Төлбөр орсон ' + paid.length + ' захиалга байна (' + paid.slice(0, 5).map(b => b.code).join(', ') + (paid.length > 5 ? '…' : '') + '). Устгахын өмнө эдгээрийг цуцална уу.');
+    if (paid.length && !req.force) fail_('PAID:' + paid.length);
     replaceExpoRows_(SH.BOOTH, e.id, []);
     replaceExpoRows_(SH.CAT, e.id, []);
     sheet_(SH.EXPO).deleteRow(e._row);
